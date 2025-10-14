@@ -153,7 +153,8 @@ class MedicineInventory {
                 videoConstraints: {
                     width: { min: 320, ideal: 640, max: 800 },
                     height: { min: 240, ideal: 480, max: 600 },
-                    frameRate: { ideal: 15, max: 30 }
+                    frameRate: { ideal: 15, max: 30 },
+                    facingMode: { ideal: "environment" } // Use back camera for scanning
                     // Remove advanced focus settings for older webcams
                 }
             });
