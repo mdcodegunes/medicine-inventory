@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medicine Inventory Manager</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="manifest.json">
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🏥 Medicine Inventory Manager</h1>
+            <nav>
+                <button id="scanBtn" class="nav-btn">📱 Scan Item</button>
+                <button id="inventoryBtn" class="nav-btn active">📋 Inventory</button>
+                <button id="transferBtn" class="nav-btn">🔄 Transfer</button>
+                <button id="settingsBtn" class="nav-btn">⚙️ Settings</button>
+            </nav>
+        </header>
+
+        <!-- Scanner Section -->
+        <section id="scannerSection" class="section hidden">
+            <h2>Scan Medicine Barcode/QR Code</h2>
+            <div class="scanner-instructions">
+                <p>📱 <strong>Instructions:</strong> Point your camera at the medicine package barcode or QR code.</p>
+                <p>💡 <strong>Tips for older webcams (like A4Tech PK-910H):</strong></p>
+                <ul>
+                    <li>🔆 Use VERY bright lighting - desk lamp recommended</li>
+                    <li>📏 Hold barcode 8-15 inches away (farther than phones)</li>
+                    <li>⏳ Wait 3-5 seconds for camera to adjust</li>
+                    <li>📱 If blurry, slowly move closer/farther until clear</li>
+                    <li>🔄 Try rotating the barcode 90 degrees</li>
+                    <li>�️ Use larger barcodes if possible</li>
+                    <li>⚡ Close other apps using camera to improve performance</li>
+                </ul>
+                <p>🔍 <strong>Supported formats:</strong> QR codes, UPC, EAN, Code 128, Code 39, and more</p>
+            </div>
+            <div id="reader" class="scanner-container"></div>
+            <div class="scanner-controls">
+                <button id="startScan">📷 Start Scanner</button>
+                <button id="stopScan" class="hidden">⏹️ Stop Scanner</button>
+                <button id="manualFocusBtn" class="hidden" onclick="medicineApp.triggerManualFocus()">🎯 Focus</button>
+                <button id="restartScannerBtn" class="hidden" onclick="medicineApp.restartScanner()">🔄 Restart Camera</button>
+            </div>
+            <div id="scannerStatus" class="scanner-status hidden">
+                <p id="statusText">Ready to scan</p>
+            </div>
+            
+            <!-- Manual Entry Form -->
+            <div class="manual-entry">
+                <h3>Or Add Manually</h3>
+                <form id="manualEntryForm">
+                    <input type="text" id="medicineCode" placeholder="Medicine Code/Barcode" required>
+                    <input type="text" id="medicineName" placeholder="Medicine Name" required>
+                    <input type="text" id="manufacturer" placeholder="Manufacturer">
+                    <input type="number" id="quantity" placeholder="Quantity" min="1" required>
+                    <input type="date" id="expirationDate" required>
+                    <select id="location" required>
+                        <option value="">Select Location</option>
+                        <option value="store">Store</option>
+                        <option value="car1">Car 1</option>
+                        <option value="car2">Car 2</option>
+                        <option value="home">Home</option>
+                    </select>
+                    <button type="submit">Add to Inventory</button>
+                </form>
+            </div>
+        </section>
+
+        <!-- Inventory Section -->
+        <section id="inventorySection" class="section">
+            <div class="inventory-header">
+                <h2>Current Inventory</h2>
+                <div class="filters">
+                    <select id="locationFilter">
+                        <option value="">All Locations</option>
+                        <option value="store">Store</option>
+                        <option value="car1">Car 1</option>
+                        <option value="car2">Car 2</option>
+                        <option value="home">Home</option>
+                    </select>
+                    <input type="text" id="searchBox" placeholder="Search medicines...">
+                    <button id="exportBtn">📤 Export</button>
+                </div>
+            </div>
+            
+            <div class="stats-cards">
+                <div class="stat-card">
+                    <h3>Total Items</h3>
+                    <span id="totalItems">0</span>
+                </div>
+                <div class="stat-card expiring">
+                    <h3>Expiring Soon</h3>
+                    <span id="expiringSoon">0</span>
+                </div>
+                <div class="stat-card expired">
+                    <h3>Expired</h3>
+                    <span id="expiredItems">0</span>
+                </div>
+            </div>
+
+            <div id="inventoryList" class="inventory-list">
+                <!-- Inventory items will be populated here -->
+            </div>
+        </section>
+
+        <!-- Transfer Section -->
+        <section id="transferSection" class="section hidden">
+            <h2>Transfer Medicine</h2>
+            <form id="transferForm">
+                <select id="transferItem" required>
+                    <option value="">Select Medicine to Transfer</option>
+                </select>
+                <div class="transfer-locations">
+                    <div>
+                        <label>From:</label>
+                        <select id="fromLocation" required>
+                            <option value="">Select Source</option>
+                            <option value="store">Store</option>
+                            <option value="car1">Car 1</option>
+                            <option value="car2">Car 2</option>
+                            <option value="home">Home</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>To:</label>
+                        <select id="toLocation" required>
+                            <option value="">Select Destination</option>
+                            <option value="store">Store</option>
+                            <option value="car1">Car 1</option>
+                            <option value="car2">Car 2</option>
+                            <option value="home">Home</option>
+                        </select>
+                    </div>
+                </div>
+                <input type="number" id="transferQuantity" placeholder="Quantity to Transfer" min="1" required>
+                <button type="submit">Transfer</button>
+            </form>
+            
+            <div id="transferHistory" class="transfer-history">
+                <h3>Recent Transfers</h3>
+                <div id="transferList">
+                    <!-- Transfer history will be populated here -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Settings Section -->
+        <section id="settingsSection" class="section hidden">
+            <h2>Settings</h2>
+            <div class="settings-group">
+                <h3>Locations</h3>
+                <div id="locationsList">
+                    <!-- Locations will be populated here -->
+                </div>
+                <div class="add-location">
+                    <input type="text" id="newLocationName" placeholder="New Location Name">
+                    <button id="addLocationBtn">Add Location</button>
+                </div>
+            </div>
+            
+            <div class="settings-group">
+                <h3>Expiration Alerts</h3>
+                <label>
+                    Alert when medicine expires within:
+                    <select id="expirationAlert">
+                        <option value="7">7 days</option>
+                        <option value="14">14 days</option>
+                        <option value="30" selected>30 days</option>
+                        <option value="60">60 days</option>
+                    </select>
+                </label>
+            </div>
+
+            <div class="settings-group">
+                <h3>Data Management</h3>
+                <button id="importBtn">📥 Import Data</button>
+                <button id="clearDataBtn" class="danger">🗑️ Clear All Data</button>
+                <input type="file" id="importFile" accept=".json" style="display: none;">
+            </div>
+        </section>
+    </div>
+
+    <!-- Item Details Panel (replaces modal) -->
+    <div id="itemDetailsPanel" class="details-panel hidden">
+        <div class="details-header">
+            <h2>Medicine Details</h2>
+            <button id="closeDetailsBtn" class="close-btn">&times;</button>
+        </div>
+        <div id="itemDetails" class="details-content"></div>
+        <div class="details-actions">
+            <button id="editItemBtn" class="action-btn edit-btn">✏️ Edit</button>
+            <button id="deleteItemBtn" class="action-btn delete-btn">🗑️ Delete</button>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+        <div class="footer-content">
+            <p>🏥 Medicine Inventory Manager</p>
+            <div class="footer-links">
+                <span id="dataStatus">📊 No data stored</span>
+                <a href="https://github.com/yourusername/medicine-inventory" target="_blank" rel="noopener">📂 View on GitHub</a>
+                <span>📱 Install as PWA for best experience</span>
+            </div>
+            <p><small>💾 Remember to backup your data regularly (Settings → Export)</small></p>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
