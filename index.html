@@ -12,10 +12,10 @@
         <header>
             <h1>🏥 İlaç Envanteri Takipçisi</h1>
             <nav>
-                <button id="addItemBtn" class="nav-btn add-btn">➕ İlaç Ekle</button>
-                <button id="inventoryBtn" class="nav-btn active">📋 Envanter</button>
-                <button id="transferBtn" class="nav-btn">🔄 Transfer</button>
-                <button id="settingsBtn" class="nav-btn">⚙️ Ayarlar</button>
+                <button id="addItemBtn" type="button" class="nav-btn add-btn">➕ İlaç Ekle</button>
+                <button id="inventoryBtn" type="button" class="nav-btn active" onclick="window.medicineApp && window.medicineApp.showSection('inventory')">📋 Envanter</button>
+                <button id="transferBtn" type="button" class="nav-btn" onclick="window.medicineApp && window.medicineApp.showSection('transfer')">🔄 Transfer</button>
+                <button id="settingsBtn" type="button" class="nav-btn" onclick="window.medicineApp && window.medicineApp.showSection('settings')">⚙️ Ayarlar</button>
             </nav>
             <div id="dataStatus">📊 Kayıtlı ilaç yok</div>
         </header>
