@@ -127,6 +127,18 @@ class MedicineInventory {
         if (clearBtn) clearBtn.addEventListener('click', () => this.clearAllData());
         const expAlert = document.getElementById('expirationAlert');
         if (expAlert) expAlert.addEventListener('change', (e) => this.updateSettings(e));
+
+        // Details panel buttons
+        const closeDetailsBtn = document.getElementById('closeDetailsBtn');
+        if (closeDetailsBtn) closeDetailsBtn.addEventListener('click', () => this.closeDetailsPanel());
+        const editDetailsBtn = document.getElementById('editItemBtn');
+        if (editDetailsBtn) editDetailsBtn.addEventListener('click', () => {
+            if (this.currentItemId) this.editItem(this.currentItemId);
+        });
+        const deleteDetailsBtn = document.getElementById('deleteItemBtn');
+        if (deleteDetailsBtn) deleteDetailsBtn.addEventListener('click', () => {
+            if (this.currentItemId) this.deleteItem(this.currentItemId);
+        });
     }
 
     // Scanner-related functions removed
