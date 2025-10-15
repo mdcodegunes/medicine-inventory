@@ -1,11 +1,19 @@
 class MedicineInventory {
     constructor() {
         this.inventory = JSON.parse(localStorage.getItem('medicineInventory')) || [];
-        this.locations = JSON.parse(localStorage.getItem('locations')) || ['store', 'car1', 'car2', 'home'];
-        this.transfers = JSON.parse(localStorage.getItem('transfers')) || [];
+        this.locations = JSON.parse(localStorage.getItem('locations')) || ['oda', 'arac', 'nakil', 'ev'];
         this.settings = JSON.parse(localStorage.getItem('settings')) || {
             expirationAlert: 30
         };
+
+        this.locationAliases = {
+            'store': 'oda',
+            'car1': 'arac',
+            'car2': 'nakil',
+            'home': 'ev'
+        };
+        this.normalizeLocalData();
+        try { localStorage.removeItem('transfers'); } catch {}
 
         // Optional: embed default Firebase Cloud Sync here so the app connects without manual input
         // Replace the firebaseConfig object below with your own, or comment this block to disable auto-embed.
@@ -89,8 +97,6 @@ class MedicineInventory {
         this.updateInventoryDisplay();
         this.updateStats();
         this.populateLocationSelects();
-        this.populateTransferItems();
-        this.displayTransferHistory();
         this.displayLocations();
         this.updateDataStatus();
         // Auto-backup removed
@@ -107,10 +113,9 @@ class MedicineInventory {
     }
 
     setupEventListeners() {
-        // Navigation (Scan removed)
-        document.getElementById('inventoryBtn').addEventListener('click', () => this.showSection('inventory'));
-        document.getElementById('transferBtn').addEventListener('click', () => this.showSection('transfer'));
-        document.getElementById('settingsBtn').addEventListener('click', () => this.showSection('settings'));
+    // Navigation (transfer sekmesi kaldırıldı)
+    document.getElementById('inventoryBtn').addEventListener('click', () => this.showSection('inventory'));
+    document.getElementById('settingsBtn').addEventListener('click', () => this.showSection('settings'));
         const addItemBtn = document.getElementById('addItemBtn');
         if (addItemBtn) addItemBtn.addEventListener('click', () => this.quickAddItem());
 
@@ -125,10 +130,6 @@ class MedicineInventory {
         if (searchBox) searchBox.addEventListener('input', () => this.updateInventoryDisplay());
         const exportBtn = document.getElementById('exportBtn');
         if (exportBtn) exportBtn.addEventListener('click', () => this.exportData());
-
-        // Transfer
-        const transferForm = document.getElementById('transferForm');
-        if (transferForm) transferForm.addEventListener('submit', (e) => this.handleTransfer(e));
 
         // Settings
         const addLocBtn = document.getElementById('addLocationBtn');
@@ -157,10 +158,19 @@ class MedicineInventory {
 
     // Scanner-related functions removed
 
+    normalizeLocalData() {
+        const map = this.locationAliases || {};
+        this.locations = Array.from(new Set((this.locations || []).map(loc => map[loc] || loc)));
+        this.inventory = (this.inventory || []).map(item => ({
+            ...item,
+            location: map[item.location] || item.location
+        }));
+    }
+
     // Simple section switcher for nav
     showSection(section) {
         this.currentSection = section;
-        const sections = ['inventory', 'transfer', 'settings'];
+        const sections = ['inventory', 'settings'];
         sections.forEach((sec) => {
             const el = document.getElementById(`${sec}Section`);
             const btn = document.getElementById(`${sec}Btn`);
@@ -223,10 +233,10 @@ class MedicineInventory {
     }
 
     async fetchMedicineInfo(barcode) {
-        console.log('Fetching medicine info for barcode:', barcode);
+    console.log('Barkod için ilaç bilgisi getiriliyor:', barcode);
         
-        // Show the barcode was processed
-        this.showNotification(`🔍 Processing barcode: ${barcode}`, 'info');
+    // Barkod işlendi bilgisini göster
+    this.showNotification(`🔍 Barkod işleniyor: ${barcode}`, 'info');
         
         // This is where you could integrate with medicine databases
         // For now, we'll just show the barcode and provide basic info
@@ -239,7 +249,7 @@ class MedicineInventory {
         try {
             // Placeholder logic - in real implementation, you'd make API calls
             if (barcode.length > 0) {
-                console.log('Barcode processed successfully:', barcode);
+                console.log('Barkod başarıyla işlendi:', barcode);
                 
                 // Auto-focus on medicine name field for user to enter
                 setTimeout(() => {
@@ -250,9 +260,9 @@ class MedicineInventory {
                     }
                 }, 100);
                 
-                // Show success message
+                // Başarı mesajı göster
                 setTimeout(() => {
-                    this.showNotification(`✅ Ready to add medicine with code: ${barcode}`, 'success');
+                    this.showNotification(`✅ ${barcode} kodlu ilacı eklemeye hazırsınız`, 'success');
                 }, 1500);
             }
         } catch (error) {
@@ -281,7 +291,7 @@ class MedicineInventory {
                     ...this.inventory[itemIndex],
                     ...medicineData
                 };
-                this.showNotification(`Updated ${medicineData.name}`, 'success');
+                this.showNotification(`${medicineData.name} güncellendi`, 'success');
             }
         } else {
             // Add new item
@@ -306,7 +316,7 @@ class MedicineInventory {
                 this.inventory.push(medicine);
             }
             
-            this.showNotification(`Added ${medicine.name} to ${medicine.location}`, 'success');
+            this.showNotification(`${medicine.name} ${this.getLocationDisplayName(medicine.location)} konumuna eklendi`, 'success');
         }
 
         this.saveData();
@@ -336,7 +346,7 @@ class MedicineInventory {
         inventoryList.innerHTML = '';
 
         if (filteredInventory.length === 0) {
-            inventoryList.innerHTML = '<div class="no-items">No medicines found. Use the ➕ Add Item button to add your first one.</div>';
+            inventoryList.innerHTML = '<div class="no-items">Henüz kayıtlı ilaç yok. ➕ İlaç Ekle butonuyla listenizi oluşturun.</div>';
             return;
         }
 
@@ -361,8 +371,8 @@ class MedicineInventory {
         div.innerHTML = `
             <div class="item-info">
                 <h4>${item.name}</h4>
-                <p><strong>Code:</strong> ${item.code}</p>
-                ${item.expirationDate ? `<p><strong>Expires:</strong> ${this.formatDate(item.expirationDate)} ${this.getExpirationStatus(daysUntilExpiration)}</p>` : ''}
+                <p><strong>Kod:</strong> ${item.code}</p>
+                ${item.expirationDate ? `<p><strong>Son Kullanma:</strong> ${this.formatDate(item.expirationDate)} ${this.getExpirationStatus(daysUntilExpiration)}</p>` : ''}
             </div>
             <div class="item-location">${this.getLocationDisplayName(item.location)}</div>
             <div class="item-quantity">${item.quantity}</div>
@@ -382,9 +392,9 @@ class MedicineInventory {
 
     getExpirationStatus(days) {
         if (days < 0) {
-            return `<span style="color: #ee5a24; font-weight: bold;">(Expired ${Math.abs(days)} days ago)</span>`;
+            return `<span style="color: #ee5a24; font-weight: bold;">(${Math.abs(days)} gün önce süresi doldu)</span>`;
         } else if (days <= this.settings.expirationAlert) {
-            return `<span style="color: #f5576c; font-weight: bold;">(Expires in ${days} days)</span>`;
+            return `<span style="color: #f5576c; font-weight: bold;">(${days} gün içinde süresi dolacak)</span>`;
         }
         return '';
     }
@@ -405,98 +415,8 @@ class MedicineInventory {
         document.getElementById('expiredItems').textContent = expired;
     }
 
-    handleTransfer(e) {
-        e.preventDefault();
-        
-        const itemId = document.getElementById('transferItem').value;
-        const fromLocation = document.getElementById('fromLocation').value;
-        const toLocation = document.getElementById('toLocation').value;
-        const quantity = parseInt(document.getElementById('transferQuantity').value);
-
-        if (fromLocation === toLocation) {
-            alert('Source and destination locations cannot be the same.');
-            return;
-        }
-
-        const sourceItem = this.inventory.find(item => 
-            item.id === itemId && item.location === fromLocation
-        );
-
-        if (!sourceItem || sourceItem.quantity < quantity) {
-            alert('Insufficient quantity at source location.');
-            return;
-        }
-
-        // Reduce quantity at source
-        sourceItem.quantity -= quantity;
-
-        // Check if there's already an item with same details at destination
-        const destItem = this.inventory.find(item =>
-            item.code === sourceItem.code &&
-            item.location === toLocation &&
-            item.expirationDate === sourceItem.expirationDate
-        );
-
-        if (destItem) {
-            destItem.quantity += quantity;
-        } else {
-            // Create new item at destination
-            const newItem = { ...sourceItem };
-            newItem.id = Date.now().toString();
-            newItem.location = toLocation;
-            newItem.quantity = quantity;
-            this.inventory.push(newItem);
-        }
-
-        // Remove source item if quantity is 0
-        if (sourceItem.quantity === 0) {
-            this.inventory = this.inventory.filter(item => item.id !== sourceItem.id);
-        }
-
-        // Record transfer
-        const transfer = {
-            id: Date.now().toString(),
-            medicineName: sourceItem.name,
-            medicineCode: sourceItem.code,
-            quantity: quantity,
-            fromLocation: fromLocation,
-            toLocation: toLocation,
-            date: new Date().toISOString()
-        };
-        this.transfers.unshift(transfer);
-
-        this.saveData();
-        this.clearTransferForm();
-        this.populateTransferItems();
-        this.displayTransferHistory();
-        this.updateInventoryDisplay();
-        this.updateStats();
-
-        this.showNotification(`Transferred ${quantity} ${sourceItem.name} from ${fromLocation} to ${toLocation}`, 'success');
-    }
-
-    populateTransferItems() {
-        const select = document.getElementById('transferItem');
-        select.innerHTML = '<option value="">Select Medicine to Transfer</option>';
-
-        const uniqueItems = new Map();
-        this.inventory.forEach(item => {
-            const key = `${item.code}-${item.location}-${item.expirationDate}`;
-            if (!uniqueItems.has(key)) {
-                uniqueItems.set(key, item);
-            }
-        });
-
-        uniqueItems.forEach(item => {
-            const option = document.createElement('option');
-            option.value = item.id;
-            option.textContent = `${item.name} (${this.getLocationDisplayName(item.location)}) - Qty: ${item.quantity}`;
-            select.appendChild(option);
-        });
-    }
-
     populateLocationSelects() {
-        const selects = ['location', 'locationFilter', 'fromLocation', 'toLocation'];
+        const selects = ['location', 'locationFilter'];
         
         selects.forEach(selectId => {
             const select = document.getElementById(selectId);
@@ -505,7 +425,7 @@ class MedicineInventory {
             const currentValue = select.value;
             const isFilter = selectId === 'locationFilter';
             
-            select.innerHTML = isFilter ? '<option value="">All Locations</option>' : '<option value="">Select Location</option>';
+            select.innerHTML = isFilter ? '<option value="">Tüm Konumlar</option>' : '<option value="">Konum Seçin</option>';
             
             this.locations.forEach(location => {
                 const option = document.createElement('option');
@@ -520,12 +440,16 @@ class MedicineInventory {
 
     getLocationDisplayName(location) {
         const displayNames = {
-            'store': 'Store',
-            'car1': 'Car 1',
-            'car2': 'Car 2',
-            'home': 'Home'
+            'oda': 'Oda',
+            'arac': 'Araç',
+            'nakil': 'Nakil Ambulansı',
+            'ev': 'Ev',
+            'store': 'Oda',
+            'car1': 'Araç',
+            'car2': 'Nakil Ambulansı',
+            'home': 'Ev'
         };
-        return displayNames[location] || location.charAt(0).toUpperCase() + location.slice(1);
+        return displayNames[location] || location;
     }
 
     addLocation() {
@@ -533,12 +457,12 @@ class MedicineInventory {
         const locationName = input.value.trim().toLowerCase().replace(/\s+/g, '_');
         
         if (!locationName) {
-            alert('Please enter a location name.');
+            alert('Lütfen bir konum adı girin.');
             return;
         }
         
         if (this.locations.includes(locationName)) {
-            alert('Location already exists.');
+            alert('Bu konum zaten mevcut.');
             return;
         }
         
@@ -548,7 +472,7 @@ class MedicineInventory {
         this.displayLocations();
         input.value = '';
         
-        this.showNotification(`Added location: ${this.getLocationDisplayName(locationName)}`, 'success');
+        this.showNotification(`Konum eklendi: ${this.getLocationDisplayName(locationName)}`, 'success');
     }
 
     displayLocations() {
@@ -560,7 +484,7 @@ class MedicineInventory {
             div.className = 'location-item';
             div.innerHTML = `
                 <span>${this.getLocationDisplayName(location)}</span>
-                <button class="remove-location" onclick="medicineApp.removeLocation('${location}')">Remove</button>
+                <button class="remove-location" onclick="medicineApp.removeLocation('${location}')">Kaldır</button>
             `;
             container.appendChild(div);
         });
@@ -568,7 +492,7 @@ class MedicineInventory {
 
     removeLocation(location) {
         if (this.inventory.some(item => item.location === location)) {
-            alert('Cannot remove location that contains inventory items. Transfer or remove items first.');
+            alert('Bu konumda envanter bulunduğu için kaldırılamaz. Önce ürünleri taşıyın veya silin.');
             return;
         }
         
@@ -577,31 +501,7 @@ class MedicineInventory {
         this.populateLocationSelects();
         this.displayLocations();
         
-        this.showNotification(`Removed location: ${this.getLocationDisplayName(location)}`, 'success');
-    }
-
-    displayTransferHistory() {
-        const container = document.getElementById('transferList');
-        container.innerHTML = '';
-        
-        if (this.transfers.length === 0) {
-            container.innerHTML = '<p>No transfers recorded yet.</p>';
-            return;
-        }
-        
-        this.transfers.slice(0, 10).forEach(transfer => {
-            const div = document.createElement('div');
-            div.className = 'transfer-item';
-            div.innerHTML = `
-                <div class="transfer-info">
-                    <strong>${transfer.medicineName}</strong> (${transfer.quantity})
-                    <br>
-                    <small>${this.getLocationDisplayName(transfer.fromLocation)} → ${this.getLocationDisplayName(transfer.toLocation)}</small>
-                </div>
-                <div class="transfer-date">${this.formatDate(transfer.date)}</div>
-            `;
-            container.appendChild(div);
-        });
+        this.showNotification(`Konum kaldırıldı: ${this.getLocationDisplayName(location)}`, 'success');
     }
 
     showItemDetails(item) {
@@ -612,11 +512,11 @@ class MedicineInventory {
         
         details.innerHTML = `
             <h3>${item.name}</h3>
-            <p><strong>Code:</strong> ${item.code}</p>
-            <p><strong>Quantity:</strong> ${item.quantity}</p>
-            <p><strong>Location:</strong> ${this.getLocationDisplayName(item.location)}</p>
-            ${item.expirationDate ? `<p><strong>Expiration Date:</strong> ${this.formatDate(item.expirationDate)} ${this.getExpirationStatus(daysUntilExpiration)}</p>` : ''}
-            <p><strong>Added:</strong> ${this.formatDate(item.addedDate)}</p>
+            <p><strong>Kod:</strong> ${item.code}</p>
+            <p><strong>Adet:</strong> ${item.quantity}</p>
+            <p><strong>Konum:</strong> ${this.getLocationDisplayName(item.location)}</p>
+            ${item.expirationDate ? `<p><strong>Son Kullanma:</strong> ${this.formatDate(item.expirationDate)} ${this.getExpirationStatus(daysUntilExpiration)}</p>` : ''}
+            <p><strong>Eklenme Tarihi:</strong> ${this.formatDate(item.addedDate)}</p>
         `;
         
         panel.classList.remove('hidden');
@@ -640,7 +540,7 @@ class MedicineInventory {
         const item = this.inventory.find(item => item.id === itemId);
         if (!item) return;
 
-    // Stay on inventory section and populate form
+    // Envanter bölümünde kal ve formu doldur
     this.showSection('inventory');
         
         // Populate the manual entry form with current item data
@@ -661,14 +561,14 @@ class MedicineInventory {
         
         // Change the submit button text
         const submitBtn = document.querySelector('#manualEntryForm button[type="submit"]');
-        submitBtn.textContent = 'Update Medicine';
+    submitBtn.textContent = 'İlacı Güncelle';
         submitBtn.style.background = '#f5576c';
         
-        this.showNotification('Edit mode: Update the details and click "Update Medicine"', 'info');
+    this.showNotification('Düzenleme modu: Bilgileri güncelleyip "İlacı Güncelle" butonuna basın', 'info');
     }
 
     deleteItem(itemId) {
-        if (confirm('Are you sure you want to delete this item?')) {
+        if (confirm('Bu ürünü silmek istediğinize emin misiniz?')) {
             // Track deletion so remote snapshot won't re-add it before our push
             this.pendingDeletions.add(itemId);
             this.inventory = this.inventory.filter(item => item.id !== itemId);
@@ -676,7 +576,7 @@ class MedicineInventory {
             this.updateInventoryDisplay();
             this.updateStats();
             this.closeModal();
-            this.showNotification('Item deleted successfully', 'success');
+            this.showNotification('İlaç başarıyla silindi', 'success');
         }
     }
 
@@ -691,24 +591,22 @@ class MedicineInventory {
             try {
                 const data = JSON.parse(event.target.result);
                 
-                if (confirm('This will replace all existing data. Are you sure?')) {
+                if (confirm('Bu işlem mevcut tüm verilerin üzerine yazacak. Emin misiniz?')) {
                     this.inventory = data.inventory || [];
-                    this.locations = data.locations || ['store', 'car1', 'car2', 'home'];
-                    this.transfers = data.transfers || [];
+                    this.locations = data.locations || ['oda', 'arac', 'nakil', 'ev'];
                     this.settings = data.settings || { expirationAlert: 30 };
+                    this.normalizeLocalData();
                     
                     this.saveData();
                     this.updateInventoryDisplay();
                     this.updateStats();
                     this.populateLocationSelects();
-                    this.populateTransferItems();
-                    this.displayTransferHistory();
                     this.displayLocations();
                     
-                    this.showNotification('Data imported successfully', 'success');
+                    this.showNotification('Veriler başarıyla içe aktarıldı', 'success');
                 }
             } catch (error) {
-                alert('Invalid file format. Please select a valid JSON file.');
+                alert('Geçersiz dosya formatı. Lütfen geçerli bir JSON dosyası seçin.');
             }
         };
         reader.readAsText(file);
@@ -717,26 +615,23 @@ class MedicineInventory {
     }
 
     clearAllData() {
-        if (confirm('This will delete ALL data permanently. Are you sure?')) {
-            if (confirm('This action cannot be undone. Confirm deletion?')) {
+        if (confirm('Bu işlem TÜM verileri kalıcı olarak silecek. Emin misiniz?')) {
+            if (confirm('Bu işlem geri alınamaz. Silmeyi onaylıyor musunuz?')) {
                 localStorage.removeItem('medicineInventory');
                 localStorage.removeItem('locations');
-                localStorage.removeItem('transfers');
                 localStorage.removeItem('settings');
                 
                 this.inventory = [];
-                this.locations = ['store', 'car1', 'car2', 'home'];
-                this.transfers = [];
+                this.locations = ['oda', 'arac', 'nakil', 'ev'];
                 this.settings = { expirationAlert: 30 };
+                this.normalizeLocalData();
                 
                 this.updateInventoryDisplay();
                 this.updateStats();
                 this.populateLocationSelects();
-                this.populateTransferItems();
-                this.displayTransferHistory();
                 this.displayLocations();
                 
-                this.showNotification('All data cleared successfully', 'success');
+                this.showNotification('Tüm veriler başarıyla silindi', 'success');
             }
         }
     }
@@ -746,13 +641,12 @@ class MedicineInventory {
         this.saveData();
         this.updateInventoryDisplay();
         this.updateStats();
-        this.showNotification('Settings updated', 'success');
+        this.showNotification('Ayarlar güncellendi', 'success');
     }
 
     saveData() {
         localStorage.setItem('medicineInventory', JSON.stringify(this.inventory));
         localStorage.setItem('locations', JSON.stringify(this.locations));
-        localStorage.setItem('transfers', JSON.stringify(this.transfers));
         localStorage.setItem('settings', JSON.stringify(this.settings));
         this.updateDataStatus();
         // Push to cloud (debounced) if enabled
@@ -771,16 +665,12 @@ class MedicineInventory {
         
         // Reset submit button
         const submitBtn = form.querySelector('button[type="submit"]');
-        submitBtn.textContent = 'Add to Inventory';
+        submitBtn.textContent = 'Envantere Ekle';
         submitBtn.style.background = '#667eea';
     }
 
-    clearTransferForm() {
-        document.getElementById('transferForm').reset();
-    }
-
     formatDate(dateString) {
-        return new Date(dateString).toLocaleDateString();
+        return new Date(dateString).toLocaleDateString('tr-TR');
     }
 
     showNotification(message, type = 'info') {
@@ -822,12 +712,12 @@ class MedicineInventory {
         const itemCount = this.inventory.length;
         const totalQuantity = this.inventory.reduce((sum, item) => sum + item.quantity, 0);
         const base = itemCount === 0
-            ? '📊 No medicines stored'
-            : `📊 ${itemCount} medicines (${totalQuantity} total)`;
+            ? '📊 Kayıtlı ilaç yok'
+            : `📊 ${itemCount} ilaç (${totalQuantity} toplam adet)`;
         const color = type === 'success' ? 'rgba(40,167,69,0.8)'
                     : type === 'error' ? 'rgba(220,53,69,0.85)'
                     : 'rgba(40,167,69,0.8)';
-        statusElement.textContent = `${base} • Cloud: ${text}`;
+        statusElement.textContent = `${base} • Bulut: ${text}`;
         statusElement.style.background = color;
     }
 
@@ -847,7 +737,7 @@ class MedicineInventory {
         if (restart) await this.stopCloudSync();
         if (this.cloud.unsub) return; // already running
         try {
-            this.setCloudStatus('connecting…', 'info');
+            this.setCloudStatus('bağlanıyor…', 'info');
             await this.ensureFirebaseLoaded();
             // init app with a stable name to avoid collisions with other Firebase apps on the page
             try {
@@ -861,8 +751,8 @@ class MedicineInventory {
                 await this.ensureAuthSignedIn();
             } catch (authErr) {
                 console.warn('Auth init/sign-in failed:', authErr);
-                this.showNotification(`Auth failed: ${authErr?.message || authErr}. Enable Anonymous auth in Firebase.`, 'error');
-                this.setCloudStatus('auth failed', 'error');
+                this.showNotification(`Kimlik doğrulama başarısız: ${authErr?.message || authErr}. Firebase Anonymous Auth'u etkinleştirin.`, 'error');
+                this.setCloudStatus('kimlik doğrulama hatası', 'error');
                 // Continue without auth; Firestore may still allow if rules are open
             }
             // Use the named app instance to get Firestore (avoids missing [DEFAULT] app error)
@@ -874,66 +764,55 @@ class MedicineInventory {
                 const initial = await docRef.get();
                 if (initial.exists) {
                     const data = initial.data();
-                    // If nothing local yet, hydrate immediately from cloud
                     if (!(this.inventory?.length) && Array.isArray(data.inventory)) this.inventory = data.inventory;
                     if (!(this.locations?.length) && Array.isArray(data.locations)) this.locations = data.locations;
-                    if (!(this.transfers?.length) && Array.isArray(data.transfers)) this.transfers = data.transfers;
-                    // Reflect UI early
+                    this.normalizeLocalData();
                     this.updateInventoryDisplay();
                     this.updateStats();
                     this.populateLocationSelects();
-                    this.populateTransferItems();
-                    this.displayTransferHistory();
                     this.displayLocations();
                     this.saveData();
                 }
             } catch (preErr) {
                 console.warn('Cloud preflight read failed:', preErr);
-                this.showNotification(`Cloud read failed: ${preErr?.message || preErr}`, 'error');
-                this.setCloudStatus('read failed', 'error');
+                this.showNotification(`Bulut okuma hatası: ${preErr?.message || preErr}`, 'error');
+                this.setCloudStatus('okuma hatası', 'error');
             }
 
             // Real-time listener
             this.cloud.unsub = docRef.onSnapshot(async (snap) => {
                 if (!snap.exists) {
-                    // Seed Firestore with local data if we have any; otherwise create an empty doc so it's visible
-                    const seedPayload = (this.inventory?.length || this.locations?.length || this.transfers?.length)
+                    const seedPayload = (this.inventory?.length || this.locations?.length)
                         ? {
                             inventory: this.inventory,
                             locations: this.locations,
-                            transfers: this.transfers,
                             __lastWriter: this.cloud.clientId,
                             __updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                           }
                         : {
                             inventory: [],
-                            locations: this.locations || ['store','car1','car2','home'],
-                            transfers: [],
+                            locations: this.locations || ['oda','arac','nakil','ev'],
                             __lastWriter: this.cloud.clientId,
                             __updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                           };
                     try {
                         await docRef.set(seedPayload, { merge: true });
                         console.log('Cloud sync: seeded workspace');
-                        this.setCloudStatus('connected (seeded)', 'success');
+                        this.setCloudStatus('bağlandı (ilk yükleme)', 'success');
                     } catch (e) {
                         console.warn('Seeding workspace failed:', e);
-                        this.showNotification(`Cloud write failed (seed): ${e?.message || e}`, 'error');
-                        this.setCloudStatus('write failed', 'error');
+                        this.showNotification(`Buluta yazma hatası (ilk yükleme): ${e?.message || e}`, 'error');
+                        this.setCloudStatus('yazma hatası', 'error');
                     }
                     return;
                 }
                 const data = snap.data();
-                // Avoid applying changes we just wrote
                 if (data.__lastWriter === this.cloud.clientId) return;
                 this.cloud.lastRemoteUpdate = Date.now();
-                // Merge remote state with local to prevent overwriting fresh local changes
                 this.applyingRemote = true;
-                // Remote update observed; unless we truly have a local change queued, stop preferring local now
                 this.pendingLocalChange = false;
                 try {
                     if (Array.isArray(data.inventory)) {
-                        // If local is empty, prefer remote wholesale to avoid showing empty after refresh
                         this.inventory = (this.inventory?.length)
                             ? this.mergeByIdArray(data.inventory, this.inventory)
                             : data.inventory;
@@ -943,15 +822,10 @@ class MedicineInventory {
                             ? this.mergeLocationsArray(data.locations, this.locations)
                             : data.locations;
                     }
-                    if (Array.isArray(data.transfers)) {
-                        this.transfers = (this.transfers?.length)
-                            ? this.mergeByIdArray(data.transfers, this.transfers)
-                            : data.transfers;
-                    }
                 } finally {
                     this.applyingRemote = false;
                 }
-                // If remote no longer has some IDs, they are deleted remotely; drop them from pendingDeletions
+                this.normalizeLocalData();
                 try {
                     const remoteIds = new Set((data.inventory || []).map(i => i && i.id).filter(Boolean));
                     if (this.pendingDeletions) {
@@ -960,26 +834,22 @@ class MedicineInventory {
                         }
                     }
                 } catch {}
-                // Keep local settings, but update lastBackupReminder opt.
                 this.updateInventoryDisplay();
                 this.updateStats();
                 this.populateLocationSelects();
-                this.populateTransferItems();
-                this.displayTransferHistory();
                 this.displayLocations();
-                this.saveData(); // persists and triggers UI status
-                this.showNotification('☁️ Changes synced from cloud', 'info');
-                this.setCloudStatus('connected', 'success');
+                this.saveData();
+                this.showNotification('☁️ Buluttan senkronize edildi', 'info');
+                this.setCloudStatus('bağlandı', 'success');
             }, (err) => {
                 console.warn('Cloud sync listener error:', err);
-                this.showNotification(`Cloud listener error: ${err?.message || err}`, 'error');
-                this.setCloudStatus('listener error', 'error');
+                this.showNotification(`Bulut dinleyici hatası: ${err?.message || err}`, 'error');
+                this.setCloudStatus('dinleme hatası', 'error');
             });
 
             // Prepare debounced save
             this.debouncedCloudSave = this.debounce(async () => {
                 try {
-                    // Ensure signed-in when rules require auth
                     try {
                         if (this.cloud?.app?.auth && !this.cloud.app.auth().currentUser) {
                             await this.ensureAuthSignedIn();
@@ -990,29 +860,27 @@ class MedicineInventory {
                     const payload = {
                         inventory: this.inventory,
                         locations: this.locations,
-                        transfers: this.transfers,
                         __lastWriter: this.cloud.clientId,
                         __updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                     };
                     await docRef.set(payload, { merge: true });
                     console.log('Cloud sync: state pushed');
-                    this.setCloudStatus('connected', 'success');
+                    this.setCloudStatus('bağlandı', 'success');
                     this.pendingLocalChange = false;
-                    // Clear any tracked deletions now that remote reflects our state
                     this.pendingDeletions.clear();
                 } catch (e) {
                     console.warn('Cloud push failed:', e);
-                    this.showNotification(`Cloud push failed: ${e?.message || e}`, 'error');
-                    this.setCloudStatus('push failed', 'error');
+                    this.showNotification(`Bulut güncellemesi başarısız: ${e?.message || e}`, 'error');
+                    this.setCloudStatus('güncelleme hatası', 'error');
                 }
             }, 800);
 
-            this.showNotification('☁️ Cloud sync connected', 'success');
-            this.setCloudStatus('connected', 'success');
+            this.showNotification('☁️ Bulut senkronu hazır', 'success');
+            this.setCloudStatus('bağlandı', 'success');
         } catch (e) {
             console.warn('Cloud sync failed to start:', e);
-            this.showNotification(`Cloud sync failed to start. ${e?.message || 'Check Firebase config.'}`, 'error');
-            this.setCloudStatus('failed to start', 'error');
+            this.showNotification(`Bulut senkronu başlatılamadı. ${e?.message || 'Firebase ayarlarını kontrol edin.'}`, 'error');
+            this.setCloudStatus('başlatılamadı', 'error');
         }
     }
 
@@ -1071,7 +939,7 @@ class MedicineInventory {
             await this.loadScript('https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js');
         } catch (e) {
             console.warn('Failed to load Firebase SDK:', e);
-            this.showNotification('Failed to load Firebase SDK. Check network and CSP.', 'error');
+            this.showNotification('Firebase SDK yüklenemedi. Ağ bağlantınızı ve CSP ayarlarınızı kontrol edin.', 'error');
             throw e;
         }
     }
@@ -1106,7 +974,6 @@ class MedicineInventory {
         const data = {
             inventory: this.inventory,
             locations: this.locations,
-            transfers: this.transfers,
             settings: this.settings,
             exportDate: new Date().toISOString(),
             appVersion: '1.0.0'
@@ -1117,13 +984,13 @@ class MedicineInventory {
         
         const a = document.createElement('a');
         a.href = url;
-        a.download = `medicine-inventory-${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `ilac-envanteri-${new Date().toISOString().split('T')[0]}.json`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
-    this.showNotification('✅ Data exported successfully! Store this file safely.', 'success');
+    this.showNotification('✅ Veriler başarıyla dışa aktarıldı! Dosyayı güvenli bir yerde saklayın.', 'success');
     }
 
     updateDataStatus() {
@@ -1133,10 +1000,10 @@ class MedicineInventory {
         const itemCount = this.inventory.length;
         const totalQuantity = this.inventory.reduce((sum, item) => sum + item.quantity, 0);
         if (itemCount === 0) {
-            statusElement.textContent = '📊 No medicines stored';
+            statusElement.textContent = '📊 Kayıtlı ilaç yok';
             statusElement.style.background = 'rgba(255,255,255,0.2)';
         } else {
-            statusElement.textContent = `📊 ${itemCount} medicines (${totalQuantity} total)`;
+            statusElement.textContent = `📊 ${itemCount} ilaç (${totalQuantity} toplam adet)`;
             statusElement.style.background = 'rgba(40,167,69,0.8)';
         }
     }

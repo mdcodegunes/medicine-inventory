@@ -448,78 +448,6 @@ nav {
     color: #333;
 }
 
-/* Transfer Styles */
-#transferForm {
-    display: grid;
-    gap: 20px;
-    max-width: 500px;
-    margin-bottom: 40px;
-}
-
-.transfer-locations {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-}
-
-.transfer-locations > div {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.transfer-locations label {
-    font-weight: 500;
-    color: #333;
-}
-
-#transferForm input,
-#transferForm select {
-    padding: 12px;
-    border: 2px solid #e9ecef;
-    border-radius: 8px;
-    font-size: 16px;
-}
-
-#transferForm button {
-    padding: 15px;
-    border: none;
-    border-radius: 8px;
-    background: #667eea;
-    color: white;
-    font-size: 16px;
-    cursor: pointer;
-    transition: all 0.3s ease;
-}
-
-#transferForm button:hover {
-    background: #5a67d8;
-}
-
-.transfer-history {
-    border-top: 2px solid #f8f9fa;
-    padding-top: 30px;
-}
-
-.transfer-item {
-    background: #f8f9fa;
-    border-radius: 8px;
-    padding: 15px;
-    margin-bottom: 10px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.transfer-info {
-    flex: 1;
-}
-
-.transfer-date {
-    color: #666;
-    font-size: 12px;
-}
-
 /* Settings Styles */
 .settings-group {
     margin-bottom: 40px;
@@ -719,10 +647,6 @@ nav {
     .inventory-item {
         grid-template-columns: 1fr;
         text-align: center;
-    }
-    
-    .transfer-locations {
-        grid-template-columns: 1fr;
     }
     
     .inventory-header {
