@@ -1,9 +1,11 @@
-const CACHE_NAME = 'medicine-inventory-v2';
+const CACHE_NAME = 'medicine-inventory-v3';
+// Derive base path from service worker scope so it works on GitHub Pages subpaths
+const SCOPE_PATH = new URL(self.registration.scope).pathname; // e.g. /medicine-inventory/
 const urlsToCache = [
-    '/',
-    '/index.html',
-    '/styles.css',
-    '/app.js',
+    SCOPE_PATH,
+    SCOPE_PATH + 'index.html',
+    SCOPE_PATH + 'styles.css',
+    SCOPE_PATH + 'app.js',
     'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'
 ];
 

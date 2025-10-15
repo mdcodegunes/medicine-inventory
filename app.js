@@ -196,7 +196,7 @@ class MedicineInventory {
                 this.settings.cloudSync.enabled = cloudEnabledEl.checked;
                 this.saveData();
                 this.updateCloudUI();
-                this.maybeStartCloudSync();
+                this.maybeStartCloudSync(true);
             });
             cloudWsEl.addEventListener('input', () => {
                 if (!this.settings.cloudSync) this.settings.cloudSync = {};
@@ -211,6 +211,8 @@ class MedicineInventory {
                     this.saveData();
                     this.showNotification('Cloud settings saved', 'success');
                     this.maybeStartCloudSync(true);
+                    // Trigger an immediate push to Firestore so others see data
+                    if (this.debouncedCloudSave) this.debouncedCloudSave();
                 } catch (e) {
                     alert('Invalid Firebase config JSON');
                 }
@@ -1473,8 +1475,25 @@ class MedicineInventory {
             const docRef = this.cloud.db.collection('workspaces').doc(cs.workspaceId);
 
             // Real-time listener
-            this.cloud.unsub = docRef.onSnapshot((snap) => {
-                if (!snap.exists) return;
+            this.cloud.unsub = docRef.onSnapshot(async (snap) => {
+                if (!snap.exists) {
+                    // Seed Firestore with local data if we have any
+                    if ((this.inventory?.length || 0) > 0) {
+                        try {
+                            await docRef.set({
+                                inventory: this.inventory,
+                                locations: this.locations,
+                                transfers: this.transfers,
+                                __lastWriter: this.cloud.clientId,
+                                __updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            }, { merge: true });
+                            console.log('Cloud sync: seeded workspace with local data');
+                        } catch (e) {
+                            console.warn('Seeding workspace failed:', e);
+                        }
+                    }
+                    return;
+                }
                 const data = snap.data();
                 // Avoid applying changes we just wrote
                 if (data.__lastWriter === this.cloud.clientId) return;
