@@ -4,16 +4,7 @@ class MedicineInventory {
         this.locations = JSON.parse(localStorage.getItem('locations')) || ['store', 'car1', 'car2', 'home'];
         this.transfers = JSON.parse(localStorage.getItem('transfers')) || [];
         this.settings = JSON.parse(localStorage.getItem('settings')) || {
-            expirationAlert: 30,
-            lastBackupReminder: null,
-            backupReminderInterval: 7, // days
-            autoBackup: {
-                enabled: false,
-                frequency: 'weekly', // daily | weekly | monthly
-                retention: 30,
-                folderGranted: false,
-                lastAutoBackup: null
-            }
+            expirationAlert: 30
         };
 
         // Optional: embed default Firebase Cloud Sync here so the app connects without manual input
@@ -60,9 +51,11 @@ class MedicineInventory {
             clientId: Math.random().toString(36).slice(2),
             lastRemoteUpdate: null
         };
+        // Ensure debouncedCloudSave is a no-op before Cloud Sync initializes
+        this.debouncedCloudSave = () => {};
         
         this.init();
-        this.checkBackupReminder();
+    // Backup reminders removed; Cloud Sync handles autosave when enabled
     }
 
     init() {
@@ -75,13 +68,7 @@ class MedicineInventory {
         this.displayTransferHistory();
         this.displayLocations();
         this.updateDataStatus();
-        // Initialize backup UI state and schedule auto backup
-        if (typeof this.updateBackupUI === 'function') {
-            this.updateBackupUI();
-        }
-        setTimeout(() => {
-            if (typeof this.runAutoBackup === 'function') this.runAutoBackup(false);
-        }, 1500);
+        // Auto-backup removed
 
         // Parse workspace id from URL (?ws=XXXX)
         try {
@@ -142,39 +129,7 @@ class MedicineInventory {
         document.getElementById('clearDataBtn').addEventListener('click', () => this.clearAllData());
         document.getElementById('expirationAlert').addEventListener('change', (e) => this.updateSettings(e));
 
-        // Auto-backup controls (if present)
-        const autoEnabledEl = document.getElementById('autoBackupEnabled');
-        const autoFreqEl = document.getElementById('autoBackupFrequency');
-        const autoRetentionEl = document.getElementById('autoBackupRetention');
-        const chooseFolderBtn = document.getElementById('chooseBackupFolderBtn');
-        const runBackupNowBtn = document.getElementById('runBackupNowBtn');
-        if (autoEnabledEl && autoFreqEl && autoRetentionEl && chooseFolderBtn && runBackupNowBtn) {
-            // Initialize values from settings
-            try {
-                autoEnabledEl.checked = !!(this.settings.autoBackup && this.settings.autoBackup.enabled);
-                autoFreqEl.value = (this.settings.autoBackup && this.settings.autoBackup.frequency) || 'weekly';
-                autoRetentionEl.value = String((this.settings.autoBackup && this.settings.autoBackup.retention) || 30);
-            } catch {}
-
-            autoEnabledEl.addEventListener('change', () => {
-                if (!this.settings.autoBackup) this.settings.autoBackup = {};
-                this.settings.autoBackup.enabled = autoEnabledEl.checked;
-                this.saveData();
-                if (typeof this.updateBackupUI === 'function') this.updateBackupUI();
-            });
-            autoFreqEl.addEventListener('change', () => {
-                if (!this.settings.autoBackup) this.settings.autoBackup = {};
-                this.settings.autoBackup.frequency = autoFreqEl.value;
-                this.saveData();
-            });
-            autoRetentionEl.addEventListener('change', () => {
-                if (!this.settings.autoBackup) this.settings.autoBackup = {};
-                this.settings.autoBackup.retention = parseInt(autoRetentionEl.value);
-                this.saveData();
-            });
-            chooseFolderBtn.addEventListener('click', () => this.chooseBackupFolder && this.chooseBackupFolder());
-            runBackupNowBtn.addEventListener('click', () => this.runAutoBackup && this.runAutoBackup(true));
-        }
+        // Auto-backup UI removed
 
         // Cloud Sync controls
         const cloudEnabledEl = document.getElementById('cloudSyncEnabled');
@@ -1388,7 +1343,7 @@ class MedicineInventory {
         localStorage.setItem('settings', JSON.stringify(this.settings));
         this.updateDataStatus();
         // Push to cloud (debounced) if enabled
-        if (this.settings.cloudSync?.enabled) {
+        if (this.settings.cloudSync?.enabled && typeof this.debouncedCloudSave === 'function') {
             this.debouncedCloudSave();
         }
     }
@@ -1571,23 +1526,7 @@ class MedicineInventory {
         });
     }
 
-    checkBackupReminder() {
-        const now = new Date();
-        const lastReminder = this.settings.lastBackupReminder ? new Date(this.settings.lastBackupReminder) : null;
-        const daysSinceReminder = lastReminder ? Math.floor((now - lastReminder) / (1000 * 60 * 60 * 24)) : 999;
-        
-        if (daysSinceReminder >= this.settings.backupReminderInterval && this.inventory.length > 0) {
-            setTimeout(() => {
-                if (confirm('📋 Backup Reminder: It\'s been a while since your last backup. Would you like to export your inventory data now?')) {
-                    this.showSection('settings');
-                    document.getElementById('exportBtn').style.animation = 'pulse 2s infinite';
-                    this.showNotification('Click the Export button to backup your data', 'info');
-                }
-                this.settings.lastBackupReminder = now.toISOString();
-                this.saveData();
-            }, 2000); // Show after 2 seconds
-        }
-    }
+    // Backup reminders removed
 
     exportData() {
         const data = {
@@ -1610,14 +1549,7 @@ class MedicineInventory {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
-        // Update last backup time
-        this.settings.lastBackupReminder = new Date().toISOString();
-        this.saveData();
-        
-        this.showNotification('✅ Data exported successfully! Store this file safely.', 'success');
-        
-        // Remove pulse animation
-        document.getElementById('exportBtn').style.animation = '';
+    this.showNotification('✅ Data exported successfully! Store this file safely.', 'success');
     }
 
     updateDataStatus() {
@@ -1626,168 +1558,16 @@ class MedicineInventory {
         
         const itemCount = this.inventory.length;
         const totalQuantity = this.inventory.reduce((sum, item) => sum + item.quantity, 0);
-        const lastBackup = this.settings.lastBackupReminder ? new Date(this.settings.lastBackupReminder) : null;
-        
         if (itemCount === 0) {
             statusElement.textContent = '📊 No medicines stored';
             statusElement.style.background = 'rgba(255,255,255,0.2)';
         } else {
-            const daysSinceBackup = lastBackup ? Math.floor((new Date() - lastBackup) / (1000 * 60 * 60 * 24)) : 999;
-            
-            if (daysSinceBackup > 7) {
-                statusElement.textContent = `📊 ${itemCount} medicines (${totalQuantity} total) - ⚠️ Backup needed`;
-                statusElement.style.background = 'rgba(255,193,7,0.8)';
-            } else {
-                statusElement.textContent = `📊 ${itemCount} medicines (${totalQuantity} total) - ✅ Recently backed up`;
-                statusElement.style.background = 'rgba(40,167,69,0.8)';
-            }
+            statusElement.textContent = `📊 ${itemCount} medicines (${totalQuantity} total)`;
+            statusElement.style.background = 'rgba(40,167,69,0.8)';
         }
     }
 
-    // ===== Auto Backup (File System Access API) =====
-    updateBackupUI() {
-        const folderPathEl = document.getElementById('backupFolderPath');
-        const lastBackupInfo = document.getElementById('lastBackupInfo');
-        if (folderPathEl) {
-            folderPathEl.textContent = this.settings.autoBackup?.folderGranted ? 'Folder selected' : 'No folder selected';
-        }
-        if (lastBackupInfo) {
-            lastBackupInfo.textContent = this.settings.autoBackup?.lastAutoBackup
-                ? `Last backup: ${new Date(this.settings.autoBackup.lastAutoBackup).toLocaleString()}`
-                : 'No backup yet';
-        }
-    }
-
-    async chooseBackupFolder() {
-        if (!('showDirectoryPicker' in window)) {
-            alert('Your browser does not support folder access. Use Chrome/Edge desktop.');
-            return;
-        }
-        try {
-            const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
-            await this._storeBackupDirHandle(dirHandle);
-            this.settings.autoBackup.folderGranted = true;
-            this.saveData();
-            this.updateBackupUI();
-            this.showNotification('📁 Backup folder selected', 'success');
-        } catch (e) {
-            if (e?.name !== 'AbortError') this.showNotification('Folder selection failed', 'error');
-        }
-    }
-
-    async _openBackupDb() {
-        if (!this._backupDbPromise) {
-            this._backupDbPromise = new Promise((resolve, reject) => {
-                const req = indexedDB.open('medicine-inventory-backup', 1);
-                req.onupgradeneeded = () => {
-                    const db = req.result;
-                    if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
-                };
-                req.onsuccess = () => resolve(req.result);
-                req.onerror = () => reject(req.error);
-            });
-        }
-        return this._backupDbPromise;
-    }
-
-    async _storeBackupDirHandle(handle) {
-        const db = await this._openBackupDb();
-        await new Promise((resolve, reject) => {
-            const tx = db.transaction('kv', 'readwrite');
-            tx.objectStore('kv').put(handle, 'backupDir');
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-        });
-    }
-
-    async _getBackupDirHandle() {
-        const db = await this._openBackupDb();
-        return await new Promise((resolve, reject) => {
-            const tx = db.transaction('kv', 'readonly');
-            const req = tx.objectStore('kv').get('backupDir');
-            req.onsuccess = () => resolve(req.result || null);
-            req.onerror = () => reject(req.error);
-        });
-    }
-
-    _shouldRunAutoBackup(now = new Date()) {
-        const ab = this.settings.autoBackup || {};
-        if (!ab.enabled || !ab.folderGranted) return false;
-        const last = ab.lastAutoBackup ? new Date(ab.lastAutoBackup) : null;
-        if (!last) return true;
-        const ms = now - last;
-        const day = 24 * 60 * 60 * 1000;
-        if (ab.frequency === 'daily') return ms >= day;
-        if (ab.frequency === 'weekly') return ms >= 7 * day;
-        if (ab.frequency === 'monthly') return ms >= 30 * day;
-        return false;
-    }
-
-    async runAutoBackup(force = false) {
-        try {
-            if (!force && !this._shouldRunAutoBackup()) return;
-            const dirHandle = await this._getBackupDirHandle();
-            if (!dirHandle) {
-                if (force) this.showNotification('No backup folder selected', 'error');
-                return;
-            }
-            // Permissions
-            let perm = await dirHandle.queryPermission?.({ mode: 'readwrite' });
-            if (perm !== 'granted') {
-                perm = await dirHandle.requestPermission?.({ mode: 'readwrite' });
-                if (perm !== 'granted') {
-                    this.showNotification('Permission to write backups denied', 'error');
-                    return;
-                }
-            }
-
-            // Build data
-            const data = {
-                inventory: this.inventory,
-                locations: this.locations,
-                transfers: this.transfers,
-                settings: this.settings,
-                exportDate: new Date().toISOString(),
-                appVersion: '1.0.0'
-            };
-            const ts = new Date();
-            const fname = `medicine-inventory-${ts.getFullYear()}${String(ts.getMonth()+1).padStart(2,'0')}${String(ts.getDate()).padStart(2,'0')}-${String(ts.getHours()).padStart(2,'0')}${String(ts.getMinutes()).padStart(2,'0')}.json`;
-            const fileHandle = await dirHandle.getFileHandle(fname, { create: true });
-            const writable = await fileHandle.createWritable();
-            await writable.write(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-            await writable.close();
-
-            // Retention
-            await this._enforceBackupRetention(dirHandle, this.settings.autoBackup?.retention || 30);
-
-            // Update state
-            this.settings.autoBackup.lastAutoBackup = ts.toISOString();
-            this.saveData();
-            this.updateBackupUI();
-            this.showNotification('✅ Auto backup saved', 'success');
-        } catch (e) {
-            console.error('Auto backup failed:', e);
-            this.showNotification('Auto backup failed', 'error');
-        }
-    }
-
-    async _enforceBackupRetention(dirHandle, keepCount) {
-        try {
-            const list = [];
-            for await (const entry of dirHandle.values()) {
-                if (entry.kind === 'file' && /medicine-inventory-\d{8}-\d{4}\.json$/.test(entry.name)) {
-                    list.push(entry.name);
-                }
-            }
-            list.sort();
-            while (list.length > keepCount) {
-                const oldest = list.shift();
-                await dirHandle.removeEntry(oldest);
-            }
-        } catch (e) {
-            console.warn('Retention cleanup warning:', e);
-        }
-    }
+    // Auto-backup removed
 }
 
 // Add notification animations to CSS
