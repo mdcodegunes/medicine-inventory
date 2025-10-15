@@ -15,6 +15,29 @@ class MedicineInventory {
                 lastAutoBackup: null
             }
         };
+
+        // Optional: embed default Firebase Cloud Sync here so the app connects without manual input
+        // Replace the firebaseConfig object below with your own, or comment this block to disable auto-embed.
+        if (!this.settings.cloudSync || !this.settings.cloudSync.firebaseConfig) {
+            this.settings.cloudSync = this.settings.cloudSync || {};
+            // BEGIN EMBEDDED FIREBASE CONFIG (provided by user)
+            this.settings.cloudSync.firebaseConfig = {
+                apiKey: "AIzaSyAY0ikBaJ8RDv7xDp-M67q1GBh4LxyyL2o",
+                authDomain: "medicine-inventory-612e9.firebaseapp.com",
+                projectId: "medicine-inventory-612e9",
+                storageBucket: "medicine-inventory-612e9.firebasestorage.app",
+                messagingSenderId: "201612203287",
+                appId: "1:201612203287:web:781ca8d46585724a4d9352",
+                measurementId: "G-P5BR4KJMZ3"
+            };
+            // END EMBEDDED FIREBASE CONFIG
+            // Default workspace id (can be overridden via ?ws=… in URL or Settings → Cloud Sync)
+            if (!this.settings.cloudSync.workspaceId) this.settings.cloudSync.workspaceId = 'default';
+            // Auto-enable cloud sync by default when embedded config is present
+            this.settings.cloudSync.enabled = true;
+            // Persist for next loads
+            try { localStorage.setItem('settings', JSON.stringify(this.settings)); } catch {}
+        }
         
         this.scanner = null;
         this.currentSection = 'inventory';
