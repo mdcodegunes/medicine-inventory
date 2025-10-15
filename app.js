@@ -53,6 +53,9 @@ class MedicineInventory {
             lastRemoteUpdate: null,
             status: 'init'
         };
+        // Concurrency flags
+        this.applyingRemote = false;
+        this.pendingLocalChange = false;
         // Ensure debouncedCloudSave is a no-op before Cloud Sync initializes
         this.debouncedCloudSave = () => {};
         
@@ -1292,6 +1295,7 @@ class MedicineInventory {
         this.updateDataStatus();
         // Push to cloud (debounced) if enabled
         if (this.settings.cloudSync?.enabled && typeof this.debouncedCloudSave === 'function') {
+            this.pendingLocalChange = true;
             this.debouncedCloudSave();
         }
     }
@@ -1446,10 +1450,21 @@ class MedicineInventory {
                 // Avoid applying changes we just wrote
                 if (data.__lastWriter === this.cloud.clientId) return;
                 this.cloud.lastRemoteUpdate = Date.now();
-                // Merge remote state
-                if (Array.isArray(data.inventory)) this.inventory = data.inventory;
-                if (Array.isArray(data.locations)) this.locations = data.locations;
-                if (Array.isArray(data.transfers)) this.transfers = data.transfers;
+                // Merge remote state with local to prevent overwriting fresh local changes
+                this.applyingRemote = true;
+                try {
+                    if (Array.isArray(data.inventory)) {
+                        this.inventory = this.mergeByIdArray(data.inventory, this.inventory);
+                    }
+                    if (Array.isArray(data.locations)) {
+                        this.locations = this.mergeLocationsArray(data.locations, this.locations);
+                    }
+                    if (Array.isArray(data.transfers)) {
+                        this.transfers = this.mergeByIdArray(data.transfers, this.transfers);
+                    }
+                } finally {
+                    this.applyingRemote = false;
+                }
                 // Keep local settings, but update lastBackupReminder opt.
                 this.updateInventoryDisplay();
                 this.updateStats();
@@ -1475,6 +1490,7 @@ class MedicineInventory {
                     await docRef.set(payload, { merge: true });
                     console.log('Cloud sync: state pushed');
                     this.setCloudStatus('connected', 'success');
+                    this.pendingLocalChange = false;
                 } catch (e) {
                     console.warn('Cloud push failed:', e);
                     this.showNotification(`Cloud push failed: ${e?.message || e}`, 'error');
@@ -1507,6 +1523,32 @@ class MedicineInventory {
             clearTimeout(t);
             t = setTimeout(() => fn.apply(this, args), wait);
         };
+    }
+
+    // Merge arrays of objects by 'id', preferring local items if pendingLocalChange
+    mergeByIdArray(remote = [], local = []) {
+        const map = new Map();
+        for (const r of remote) {
+            if (r && r.id != null) map.set(r.id, r);
+        }
+        for (const l of local) {
+            if (l && l.id != null) {
+                if (this.pendingLocalChange) {
+                    // Prefer local when there's a pending local change
+                    map.set(l.id, l);
+                } else if (!map.has(l.id)) {
+                    map.set(l.id, l);
+                }
+            }
+        }
+        return Array.from(map.values());
+    }
+
+    // Merge location arrays (strings) unique
+    mergeLocationsArray(remote = [], local = []) {
+        const set = new Set(remote);
+        for (const l of local) set.add(l);
+        return Array.from(set.values());
     }
 
     async ensureFirebaseLoaded() {
