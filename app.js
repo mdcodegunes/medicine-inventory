@@ -1862,7 +1862,8 @@ document.addEventListener('DOMContentLoaded', () => {
 // Service Worker for offline functionality
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
+        // Use relative path so it works on GitHub Pages subpaths (e.g., /medicine-inventory/)
+        navigator.serviceWorker.register('sw.js', { scope: './' })
             .then((registration) => {
                 console.log('SW registered: ', registration);
             })
