@@ -85,11 +85,24 @@ class MedicineInventory {
                 this.settings.cloudSync.workspaceId = ws;
                 this.settings.cloudSync.enabled = true;
                 this.saveData();
+            } else if (this.settings.cloudSync?.workspaceId) {
+                // Ensure URL reflects the saved workspace so refreshes keep it
+                this.ensureWorkspaceInUrl(this.settings.cloudSync.workspaceId);
             }
         } catch {}
 
         // Start cloud sync automatically when config+workspace are present
         this.maybeStartCloudSync(true);
+    }
+
+    ensureWorkspaceInUrl(ws) {
+        try {
+            const url = new URL(window.location.href);
+            if (!url.searchParams.get('ws')) {
+                url.searchParams.set('ws', ws);
+                history.replaceState(null, '', url.toString());
+            }
+        } catch {}
     }
 
     setupEventListeners() {
@@ -857,7 +870,22 @@ class MedicineInventory {
 
             // Basic connectivity read (helps expose permission errors early)
             try {
-                await docRef.get();
+                const initial = await docRef.get();
+                if (initial.exists) {
+                    const data = initial.data();
+                    // If nothing local yet, hydrate immediately from cloud
+                    if (!(this.inventory?.length) && Array.isArray(data.inventory)) this.inventory = data.inventory;
+                    if (!(this.locations?.length) && Array.isArray(data.locations)) this.locations = data.locations;
+                    if (!(this.transfers?.length) && Array.isArray(data.transfers)) this.transfers = data.transfers;
+                    // Reflect UI early
+                    this.updateInventoryDisplay();
+                    this.updateStats();
+                    this.populateLocationSelects();
+                    this.populateTransferItems();
+                    this.displayTransferHistory();
+                    this.displayLocations();
+                    this.saveData();
+                }
             } catch (preErr) {
                 console.warn('Cloud preflight read failed:', preErr);
                 this.showNotification(`Cloud read failed: ${preErr?.message || preErr}`, 'error');
@@ -902,13 +930,20 @@ class MedicineInventory {
                 this.applyingRemote = true;
                 try {
                     if (Array.isArray(data.inventory)) {
-                        this.inventory = this.mergeByIdArray(data.inventory, this.inventory);
+                        // If local is empty, prefer remote wholesale to avoid showing empty after refresh
+                        this.inventory = (this.inventory?.length)
+                            ? this.mergeByIdArray(data.inventory, this.inventory)
+                            : data.inventory;
                     }
                     if (Array.isArray(data.locations)) {
-                        this.locations = this.mergeLocationsArray(data.locations, this.locations);
+                        this.locations = (this.locations?.length)
+                            ? this.mergeLocationsArray(data.locations, this.locations)
+                            : data.locations;
                     }
                     if (Array.isArray(data.transfers)) {
-                        this.transfers = this.mergeByIdArray(data.transfers, this.transfers);
+                        this.transfers = (this.transfers?.length)
+                            ? this.mergeByIdArray(data.transfers, this.transfers)
+                            : data.transfers;
                     }
                 } finally {
                     this.applyingRemote = false;
