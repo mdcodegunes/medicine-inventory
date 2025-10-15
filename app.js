@@ -49,7 +49,8 @@ class MedicineInventory {
             unsub: null,
             saveTimer: null,
             clientId: Math.random().toString(36).slice(2),
-            lastRemoteUpdate: null
+            lastRemoteUpdate: null,
+            status: 'init'
         };
         // Ensure debouncedCloudSave is a no-op before Cloud Sync initializes
         this.debouncedCloudSave = () => {};
@@ -1347,6 +1348,22 @@ class MedicineInventory {
     // ===== Cloud Sync (Beta) via Firebase Firestore (client-only) =====
     updateCloudUI() {}
 
+    setCloudStatus(text, type = 'info') {
+        this.cloud.status = text;
+        const statusElement = document.getElementById('dataStatus');
+        if (!statusElement) return;
+        const itemCount = this.inventory.length;
+        const totalQuantity = this.inventory.reduce((sum, item) => sum + item.quantity, 0);
+        const base = itemCount === 0
+            ? '📊 No medicines stored'
+            : `📊 ${itemCount} medicines (${totalQuantity} total)`;
+        const color = type === 'success' ? 'rgba(40,167,69,0.8)'
+                    : type === 'error' ? 'rgba(220,53,69,0.85)'
+                    : 'rgba(40,167,69,0.8)';
+        statusElement.textContent = `${base} • Cloud: ${text}`;
+        statusElement.style.background = color;
+    }
+
     randomId(n = 8) {
         const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
         let s = '';
@@ -1363,29 +1380,53 @@ class MedicineInventory {
         if (restart) await this.stopCloudSync();
         if (this.cloud.unsub) return; // already running
         try {
+            this.setCloudStatus('connecting…', 'info');
             await this.ensureFirebaseLoaded();
-            // init app
-            this.cloud.app = firebase.apps?.length ? firebase.app() : firebase.initializeApp(cs.firebaseConfig);
+            // init app with a stable name to avoid collisions with other Firebase apps on the page
+            try {
+                this.cloud.app = firebase.app('medicine-inventory');
+            } catch (_) {
+                this.cloud.app = firebase.initializeApp(cs.firebaseConfig, 'medicine-inventory');
+            }
             this.cloud.db = firebase.firestore();
             const docRef = this.cloud.db.collection('workspaces').doc(cs.workspaceId);
+
+            // Basic connectivity read (helps expose permission errors early)
+            try {
+                await docRef.get();
+            } catch (preErr) {
+                console.warn('Cloud preflight read failed:', preErr);
+                this.showNotification(`Cloud read failed: ${preErr?.message || preErr}`, 'error');
+                this.setCloudStatus('read failed', 'error');
+            }
 
             // Real-time listener
             this.cloud.unsub = docRef.onSnapshot(async (snap) => {
                 if (!snap.exists) {
-                    // Seed Firestore with local data if we have any
-                    if ((this.inventory?.length || 0) > 0) {
-                        try {
-                            await docRef.set({
-                                inventory: this.inventory,
-                                locations: this.locations,
-                                transfers: this.transfers,
-                                __lastWriter: this.cloud.clientId,
-                                __updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                            }, { merge: true });
-                            console.log('Cloud sync: seeded workspace with local data');
-                        } catch (e) {
-                            console.warn('Seeding workspace failed:', e);
-                        }
+                    // Seed Firestore with local data if we have any; otherwise create an empty doc so it's visible
+                    const seedPayload = (this.inventory?.length || this.locations?.length || this.transfers?.length)
+                        ? {
+                            inventory: this.inventory,
+                            locations: this.locations,
+                            transfers: this.transfers,
+                            __lastWriter: this.cloud.clientId,
+                            __updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                          }
+                        : {
+                            inventory: [],
+                            locations: this.locations || ['store','car1','car2','home'],
+                            transfers: [],
+                            __lastWriter: this.cloud.clientId,
+                            __updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                          };
+                    try {
+                        await docRef.set(seedPayload, { merge: true });
+                        console.log('Cloud sync: seeded workspace');
+                        this.setCloudStatus('connected (seeded)', 'success');
+                    } catch (e) {
+                        console.warn('Seeding workspace failed:', e);
+                        this.showNotification(`Cloud write failed (seed): ${e?.message || e}`, 'error');
+                        this.setCloudStatus('write failed', 'error');
                     }
                     return;
                 }
@@ -1406,6 +1447,7 @@ class MedicineInventory {
                 this.displayLocations();
                 this.saveData(); // persists and triggers UI status
                 this.showNotification('☁️ Changes synced from cloud', 'info');
+                this.setCloudStatus('connected', 'success');
             }, (err) => console.warn('Cloud sync listener error:', err));
 
             // Prepare debounced save
@@ -1420,15 +1462,20 @@ class MedicineInventory {
                     };
                     await docRef.set(payload, { merge: true });
                     console.log('Cloud sync: state pushed');
+                    this.setCloudStatus('connected', 'success');
                 } catch (e) {
                     console.warn('Cloud push failed:', e);
+                    this.showNotification(`Cloud push failed: ${e?.message || e}`, 'error');
+                    this.setCloudStatus('push failed', 'error');
                 }
             }, 800);
 
             this.showNotification('☁️ Cloud sync connected', 'success');
+            this.setCloudStatus('connected', 'success');
         } catch (e) {
             console.warn('Cloud sync failed to start:', e);
-            this.showNotification('Cloud sync failed to start. Check Firebase config.', 'error');
+            this.showNotification(`Cloud sync failed to start. ${e?.message || 'Check Firebase config.'}`, 'error');
+            this.setCloudStatus('failed to start', 'error');
         }
     }
 
@@ -1452,8 +1499,14 @@ class MedicineInventory {
 
     async ensureFirebaseLoaded() {
         if (window.firebase?.firestore) return;
-        await this.loadScript('https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js');
-        await this.loadScript('https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js');
+        try {
+            await this.loadScript('https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js');
+            await this.loadScript('https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js');
+        } catch (e) {
+            console.warn('Failed to load Firebase SDK:', e);
+            this.showNotification('Failed to load Firebase SDK. Check network and CSP.', 'error');
+            throw e;
+        }
     }
 
     async loadScript(src) {
