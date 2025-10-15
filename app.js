@@ -929,6 +929,8 @@ class MedicineInventory {
                 this.cloud.lastRemoteUpdate = Date.now();
                 // Merge remote state with local to prevent overwriting fresh local changes
                 this.applyingRemote = true;
+                // Remote update observed; unless we truly have a local change queued, stop preferring local now
+                this.pendingLocalChange = false;
                 try {
                     if (Array.isArray(data.inventory)) {
                         // If local is empty, prefer remote wholesale to avoid showing empty after refresh
@@ -949,6 +951,15 @@ class MedicineInventory {
                 } finally {
                     this.applyingRemote = false;
                 }
+                // If remote no longer has some IDs, they are deleted remotely; drop them from pendingDeletions
+                try {
+                    const remoteIds = new Set((data.inventory || []).map(i => i && i.id).filter(Boolean));
+                    if (this.pendingDeletions) {
+                        for (const id of Array.from(this.pendingDeletions)) {
+                            if (!remoteIds.has(id)) this.pendingDeletions.delete(id);
+                        }
+                    }
+                } catch {}
                 // Keep local settings, but update lastBackupReminder opt.
                 this.updateInventoryDisplay();
                 this.updateStats();
@@ -1033,12 +1044,11 @@ class MedicineInventory {
                 map.set(r.id, r);
             }
         }
-        for (const l of local) {
-            if (l && l.id != null) {
-                if (this.pendingLocalChange) {
-                    // Prefer local when there's a pending local change
-                    map.set(l.id, l);
-                } else if (!map.has(l.id)) {
+        // Only overlay local items when there is a pending local change from this client.
+        // Otherwise, respect remote as the source of truth (so deletions propagate).
+        if (this.pendingLocalChange) {
+            for (const l of local) {
+                if (l && l.id != null) {
                     map.set(l.id, l);
                 }
             }
