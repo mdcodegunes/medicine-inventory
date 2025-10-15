@@ -65,7 +65,7 @@ class MedicineInventory {
 
     init() {
         this.setupEventListeners();
-    this.showSection('inventory');
+        this.showSection('inventory');
         this.updateInventoryDisplay();
         this.updateStats();
         this.populateLocationSelects();
@@ -96,6 +96,8 @@ class MedicineInventory {
         document.getElementById('inventoryBtn').addEventListener('click', () => this.showSection('inventory'));
         document.getElementById('transferBtn').addEventListener('click', () => this.showSection('transfer'));
         document.getElementById('settingsBtn').addEventListener('click', () => this.showSection('settings'));
+        const addItemBtn = document.getElementById('addItemBtn');
+        if (addItemBtn) addItemBtn.addEventListener('click', () => this.quickAddItem());
 
         // Manual entry
         const manualForm = document.getElementById('manualEntryForm');
@@ -127,6 +129,27 @@ class MedicineInventory {
     }
 
     // Scanner-related functions removed
+
+    // Simple section switcher for nav
+    showSection(section) {
+        this.currentSection = section;
+        const sections = ['inventory', 'transfer', 'settings'];
+        sections.forEach((sec) => {
+            const el = document.getElementById(`${sec}Section`);
+            const btn = document.getElementById(`${sec}Btn`);
+            if (el) el.classList.toggle('hidden', sec !== section);
+            if (btn) btn.classList.toggle('active', sec === section);
+        });
+    }
+
+    // Jumps to manual form and focuses first field
+    quickAddItem() {
+        this.showSection('inventory');
+        const formWrap = document.querySelector('.manual-entry');
+        if (formWrap) formWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const codeInput = document.getElementById('medicineCode');
+        if (codeInput) setTimeout(() => codeInput.focus(), 250);
+    }
 
     // Parse common GS1 Data (supports (01)GTIN and (21)Serial; also FNC1-separated)
     parseGs1(text) {
@@ -286,7 +309,7 @@ class MedicineInventory {
         inventoryList.innerHTML = '';
 
         if (filteredInventory.length === 0) {
-            inventoryList.innerHTML = '<div class="no-items">No medicines found. Add some using the scanner or manual entry.</div>';
+            inventoryList.innerHTML = '<div class="no-items">No medicines found. Use the ➕ Add Item button to add your first one.</div>';
             return;
         }
 

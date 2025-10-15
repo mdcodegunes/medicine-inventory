@@ -62,6 +62,15 @@ nav {
     color: white;
 }
 
+/* Quick Add button highlight */
+.nav-btn.add-btn {
+    background: #28a745;
+    color: #fff;
+}
+.nav-btn.add-btn:hover {
+    background: #218838;
+}
+
 .section {
     background: white;
     border-radius: 15px;
