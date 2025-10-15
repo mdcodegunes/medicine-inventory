@@ -875,6 +875,8 @@ class MedicineInventory {
                 }
             }, 800);
 
+            if (this.pendingLocalChange) this.debouncedCloudSave();
+
             this.showNotification('☁️ Bulut senkronu hazır', 'success');
             this.setCloudStatus('bağlandı', 'success');
         } catch (e) {
