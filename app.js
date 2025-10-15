@@ -56,6 +56,7 @@ class MedicineInventory {
         // Concurrency flags
         this.applyingRemote = false;
         this.pendingLocalChange = false;
+    this.pendingDeletions = new Set();
         // Ensure debouncedCloudSave is a no-op before Cloud Sync initializes
         this.debouncedCloudSave = () => {};
         
@@ -642,6 +643,8 @@ class MedicineInventory {
 
     deleteItem(itemId) {
         if (confirm('Are you sure you want to delete this item?')) {
+            // Track deletion so remote snapshot won't re-add it before our push
+            this.pendingDeletions.add(itemId);
             this.inventory = this.inventory.filter(item => item.id !== itemId);
             this.saveData();
             this.updateInventoryDisplay();
@@ -727,7 +730,7 @@ class MedicineInventory {
         localStorage.setItem('settings', JSON.stringify(this.settings));
         this.updateDataStatus();
         // Push to cloud (debounced) if enabled
-        if (this.settings.cloudSync?.enabled && typeof this.debouncedCloudSave === 'function') {
+        if (!this.applyingRemote && this.settings.cloudSync?.enabled && typeof this.debouncedCloudSave === 'function') {
             this.pendingLocalChange = true;
             this.debouncedCloudSave();
         }
@@ -924,6 +927,8 @@ class MedicineInventory {
                     console.log('Cloud sync: state pushed');
                     this.setCloudStatus('connected', 'success');
                     this.pendingLocalChange = false;
+                    // Clear any tracked deletions now that remote reflects our state
+                    this.pendingDeletions.clear();
                 } catch (e) {
                     console.warn('Cloud push failed:', e);
                     this.showNotification(`Cloud push failed: ${e?.message || e}`, 'error');
@@ -962,7 +967,11 @@ class MedicineInventory {
     mergeByIdArray(remote = [], local = []) {
         const map = new Map();
         for (const r of remote) {
-            if (r && r.id != null) map.set(r.id, r);
+            if (r && r.id != null) {
+                // If we have a pending local deletion for this id, skip bringing it from remote
+                if (this.pendingDeletions && this.pendingDeletions.has(r.id)) continue;
+                map.set(r.id, r);
+            }
         }
         for (const l of local) {
             if (l && l.id != null) {
