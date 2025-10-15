@@ -46,6 +46,7 @@ class MedicineInventory {
         this.cloud = {
             app: null,
             db: null,
+            auth: null,
             unsub: null,
             saveTimer: null,
             clientId: Math.random().toString(36).slice(2),
@@ -1388,6 +1389,16 @@ class MedicineInventory {
             } catch (_) {
                 this.cloud.app = firebase.initializeApp(cs.firebaseConfig, 'medicine-inventory');
             }
+            // Initialize Auth (used for rules requiring authentication)
+            try {
+                this.cloud.auth = this.cloud.app.auth();
+                await this.ensureAuthSignedIn();
+            } catch (authErr) {
+                console.warn('Auth init/sign-in failed:', authErr);
+                this.showNotification(`Auth failed: ${authErr?.message || authErr}. Enable Anonymous auth in Firebase.`, 'error');
+                this.setCloudStatus('auth failed', 'error');
+                // Continue without auth; Firestore may still allow if rules are open
+            }
             // Use the named app instance to get Firestore (avoids missing [DEFAULT] app error)
             this.cloud.db = this.cloud.app.firestore();
             const docRef = this.cloud.db.collection('workspaces').doc(cs.workspaceId);
@@ -1499,13 +1510,28 @@ class MedicineInventory {
     }
 
     async ensureFirebaseLoaded() {
-        if (window.firebase?.firestore) return;
+        if (window.firebase?.firestore && window.firebase?.auth) return;
         try {
             await this.loadScript('https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js');
             await this.loadScript('https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js');
+            await this.loadScript('https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js');
         } catch (e) {
             console.warn('Failed to load Firebase SDK:', e);
             this.showNotification('Failed to load Firebase SDK. Check network and CSP.', 'error');
+            throw e;
+        }
+    }
+
+    async ensureAuthSignedIn() {
+        try {
+            const user = this.cloud.app.auth().currentUser;
+            if (user) return user;
+            await this.cloud.app.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+            const cred = await this.cloud.app.auth().signInAnonymously();
+            console.log('Signed in anonymously:', cred?.user?.uid);
+            return cred.user;
+        } catch (e) {
+            console.warn('Anonymous sign-in failed:', e);
             throw e;
         }
     }
