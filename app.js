@@ -6,11 +6,37 @@ class MedicineInventory {
         this.settings = JSON.parse(localStorage.getItem('settings')) || {
             expirationAlert: 30,
             lastBackupReminder: null,
-            backupReminderInterval: 7 // days
+            backupReminderInterval: 7, // days
+            autoBackup: {
+                enabled: false,
+                frequency: 'weekly', // daily | weekly | monthly
+                retention: 30,
+                folderGranted: false,
+                lastAutoBackup: null
+            }
         };
         
         this.scanner = null;
         this.currentSection = 'inventory';
+        this.lastMultiFormatError = 0; // Track error timing
+        this.scannerRetryCount = 0; // Track retry attempts
+        this.multiFormatErrorCount = 0; // Count consecutive decode failures
+
+        // Native BarcodeDetector fallback state
+        this.nativeDetector = null;
+        this.nativeVideo = null;
+        this.nativeStream = null;
+        this.nativeScanRAF = null;
+
+        // Cloud sync state
+        this.cloud = {
+            app: null,
+            db: null,
+            unsub: null,
+            saveTimer: null,
+            clientId: Math.random().toString(36).slice(2),
+            lastRemoteUpdate: null
+        };
         
         this.init();
         this.checkBackupReminder();
@@ -26,6 +52,28 @@ class MedicineInventory {
         this.displayTransferHistory();
         this.displayLocations();
         this.updateDataStatus();
+        // Initialize backup UI state and schedule auto backup
+        if (typeof this.updateBackupUI === 'function') {
+            this.updateBackupUI();
+        }
+        setTimeout(() => {
+            if (typeof this.runAutoBackup === 'function') this.runAutoBackup(false);
+        }, 1500);
+
+        // Parse workspace id from URL (?ws=XXXX)
+        try {
+            const params = new URLSearchParams(window.location.search);
+            const ws = params.get('ws');
+            if (ws) {
+                if (!this.settings.cloudSync) this.settings.cloudSync = {};
+                this.settings.cloudSync.workspaceId = ws;
+                this.settings.cloudSync.enabled = true;
+                this.saveData();
+            }
+        } catch {}
+
+        // Start cloud sync if enabled
+        this.maybeStartCloudSync();
     }
 
     setupEventListeners() {
@@ -38,6 +86,20 @@ class MedicineInventory {
         // Scanner
         document.getElementById('startScan').addEventListener('click', () => this.startScanner());
         document.getElementById('stopScan').addEventListener('click', () => this.stopScanner());
+        // Native scanner (ensure button exists even if HTML was cached)
+        let nativeBtn = document.getElementById('nativeScanBtn');
+        if (!nativeBtn) {
+            nativeBtn = this.ensureNativeScanButton();
+        }
+        if (nativeBtn) {
+            nativeBtn.addEventListener('click', () => this.startNativeScanner());
+            // Show the button only if supported
+            if ('BarcodeDetector' in window) {
+                nativeBtn.classList.remove('hidden');
+            } else {
+                nativeBtn.classList.add('hidden');
+            }
+        }
 
         // Manual entry
         document.getElementById('manualEntryForm').addEventListener('submit', (e) => this.handleManualEntry(e));
@@ -56,6 +118,94 @@ class MedicineInventory {
         document.getElementById('importFile').addEventListener('change', (e) => this.importData(e));
         document.getElementById('clearDataBtn').addEventListener('click', () => this.clearAllData());
         document.getElementById('expirationAlert').addEventListener('change', (e) => this.updateSettings(e));
+
+        // Auto-backup controls (if present)
+        const autoEnabledEl = document.getElementById('autoBackupEnabled');
+        const autoFreqEl = document.getElementById('autoBackupFrequency');
+        const autoRetentionEl = document.getElementById('autoBackupRetention');
+        const chooseFolderBtn = document.getElementById('chooseBackupFolderBtn');
+        const runBackupNowBtn = document.getElementById('runBackupNowBtn');
+        if (autoEnabledEl && autoFreqEl && autoRetentionEl && chooseFolderBtn && runBackupNowBtn) {
+            // Initialize values from settings
+            try {
+                autoEnabledEl.checked = !!(this.settings.autoBackup && this.settings.autoBackup.enabled);
+                autoFreqEl.value = (this.settings.autoBackup && this.settings.autoBackup.frequency) || 'weekly';
+                autoRetentionEl.value = String((this.settings.autoBackup && this.settings.autoBackup.retention) || 30);
+            } catch {}
+
+            autoEnabledEl.addEventListener('change', () => {
+                if (!this.settings.autoBackup) this.settings.autoBackup = {};
+                this.settings.autoBackup.enabled = autoEnabledEl.checked;
+                this.saveData();
+                if (typeof this.updateBackupUI === 'function') this.updateBackupUI();
+            });
+            autoFreqEl.addEventListener('change', () => {
+                if (!this.settings.autoBackup) this.settings.autoBackup = {};
+                this.settings.autoBackup.frequency = autoFreqEl.value;
+                this.saveData();
+            });
+            autoRetentionEl.addEventListener('change', () => {
+                if (!this.settings.autoBackup) this.settings.autoBackup = {};
+                this.settings.autoBackup.retention = parseInt(autoRetentionEl.value);
+                this.saveData();
+            });
+            chooseFolderBtn.addEventListener('click', () => this.chooseBackupFolder && this.chooseBackupFolder());
+            runBackupNowBtn.addEventListener('click', () => this.runAutoBackup && this.runAutoBackup(true));
+        }
+
+        // Cloud Sync controls
+        const cloudEnabledEl = document.getElementById('cloudSyncEnabled');
+        const cloudWsEl = document.getElementById('cloudWorkspaceId');
+        const cloudStatusEl = document.getElementById('cloudSyncStatus');
+        const cloudCfgEl = document.getElementById('firebaseConfig');
+        const saveCloudBtn = document.getElementById('saveCloudConfigBtn');
+        const shareLinkBtn = document.getElementById('copyShareLinkBtn');
+        if (cloudEnabledEl && cloudWsEl && cloudStatusEl && cloudCfgEl && saveCloudBtn && shareLinkBtn) {
+            // Initialize from settings
+            const cs = this.settings.cloudSync || {};
+            cloudEnabledEl.checked = !!cs.enabled;
+            cloudWsEl.value = cs.workspaceId || '';
+            cloudCfgEl.value = cs.firebaseConfig ? JSON.stringify(cs.firebaseConfig, null, 2) : '';
+            this.updateCloudUI();
+
+            cloudEnabledEl.addEventListener('change', () => {
+                if (!this.settings.cloudSync) this.settings.cloudSync = {};
+                this.settings.cloudSync.enabled = cloudEnabledEl.checked;
+                this.saveData();
+                this.updateCloudUI();
+                this.maybeStartCloudSync();
+            });
+            cloudWsEl.addEventListener('input', () => {
+                if (!this.settings.cloudSync) this.settings.cloudSync = {};
+                this.settings.cloudSync.workspaceId = cloudWsEl.value.trim();
+                this.saveData();
+            });
+            saveCloudBtn.addEventListener('click', () => {
+                try {
+                    const cfg = JSON.parse(cloudCfgEl.value || '{}');
+                    if (!this.settings.cloudSync) this.settings.cloudSync = {};
+                    this.settings.cloudSync.firebaseConfig = cfg;
+                    this.saveData();
+                    this.showNotification('Cloud settings saved', 'success');
+                    this.maybeStartCloudSync(true);
+                } catch (e) {
+                    alert('Invalid Firebase config JSON');
+                }
+            });
+            shareLinkBtn.addEventListener('click', async () => {
+                if (!this.settings.cloudSync?.workspaceId) {
+                    // Create a random workspace id if missing
+                    const id = this.randomId(8);
+                    this.settings.cloudSync = this.settings.cloudSync || {};
+                    this.settings.cloudSync.workspaceId = id;
+                    cloudWsEl.value = id;
+                    this.saveData();
+                }
+                const url = `${window.location.origin}${window.location.pathname}?ws=${encodeURIComponent(this.settings.cloudSync.workspaceId)}`;
+                try { await navigator.clipboard.writeText(url); } catch {}
+                this.showNotification('Share link copied to clipboard', 'success');
+            });
+        }
 
         // Details Panel
         document.getElementById('closeDetailsBtn').addEventListener('click', () => {
@@ -76,6 +226,30 @@ class MedicineInventory {
                 this.closeDetailsPanel();
             }
         });
+    }
+
+    // Create Native Scanner button dynamically if missing (handles SW-cached HTML)
+    ensureNativeScanButton() {
+        try {
+            const controls = document.querySelector('.scanner-controls');
+            if (!controls) return null;
+            const btn = document.createElement('button');
+            btn.id = 'nativeScanBtn';
+            btn.title = "Uses browser's built‑in barcode detector if available";
+            btn.textContent = '🧪 Native Scanner (Beta)';
+            btn.classList.add('hidden');
+            // Insert before test button if present
+            const testBtn = document.getElementById('testScanBtn');
+            if (testBtn) {
+                controls.insertBefore(btn, testBtn);
+            } else {
+                controls.appendChild(btn);
+            }
+            return btn;
+        } catch (e) {
+            console.warn('Could not inject native scan button:', e);
+            return null;
+        }
     }
 
     showSection(sectionName) {
@@ -119,6 +293,15 @@ class MedicineInventory {
 
     async startScanner() {
         try {
+            console.log('Starting QR scanner...');
+            
+            // Check if Html5QrcodeScanner is available
+            if (typeof Html5QrcodeScanner === 'undefined') {
+                console.error('Html5QrcodeScanner is not loaded');
+                alert('QR Scanner library not loaded. Please refresh the page and try again.');
+                return;
+            }
+            
             // Check camera permission first
             const hasPermission = await this.checkCameraPermission();
             if (!hasPermission) {
@@ -128,55 +311,171 @@ class MedicineInventory {
 
             // Clear any existing scanner
             if (this.scanner) {
-                await this.scanner.clear();
+                try {
+                    await this.scanner.clear();
+                } catch (error) {
+                    console.warn('Error clearing previous scanner:', error);
+                }
                 this.scanner = null;
             }
+            // Ensure native scanner is stopped
+            await this.stopNativeScanner();
 
-            this.scanner = new Html5QrcodeScanner("reader", {
-                fps: 5,
-                qrbox: { width: 250, height: 250 },
+            console.log('Initializing Html5QrcodeScanner...');
+            
+            // Check if required classes are available
+            if (typeof Html5QrcodeScanType === 'undefined') {
+                console.warn('Html5QrcodeScanType not available, using simple config');
+            }
+            if (typeof Html5QrcodeSupportedFormats === 'undefined') {
+                console.warn('Html5QrcodeSupportedFormats not available, using simple config');
+            }
+            
+            // Optimized configuration for Data Matrix and small QR codes
+            const config = {
+                fps: 15, // Higher fps for better Data Matrix detection
+                qrbox: { width: 350, height: 350 }, // Even larger detection box for small codes
                 aspectRatio: 1.0,
                 rememberLastUsedCamera: true,
-                showTorchButtonIfSupported: false,
-                showZoomSliderIfSupported: false,
-                supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
-                formatsToSupport: [
+                showTorchButtonIfSupported: true,
+                showZoomSliderIfSupported: true,
+                verbose: true, // Enable verbose logging
+                disableFlip: false // Allow flipped detection
+            };
+            
+            // Add ALL supported scan types for maximum compatibility
+            if (typeof Html5QrcodeScanType !== 'undefined') {
+                config.supportedScanTypes = [Html5QrcodeScanType.SCAN_TYPE_CAMERA];
+            }
+            
+            // Prioritize Data Matrix and QR codes for medicine packaging
+            if (typeof Html5QrcodeSupportedFormats !== 'undefined') {
+                config.formatsToSupport = [
+                    Html5QrcodeSupportedFormats.DATA_MATRIX, // Your code format - prioritize this!
                     Html5QrcodeSupportedFormats.QR_CODE,
+                    Html5QrcodeSupportedFormats.AZTEC,
+                    Html5QrcodeSupportedFormats.PDF_417,
                     Html5QrcodeSupportedFormats.CODE_128,
+                    Html5QrcodeSupportedFormats.CODE_39,
                     Html5QrcodeSupportedFormats.EAN_13,
                     Html5QrcodeSupportedFormats.EAN_8,
-                    Html5QrcodeSupportedFormats.UPC_A
-                ],
-                experimentalFeatures: {
-                    useBarCodeDetectorIfSupported: false
-                },
-                videoConstraints: {
-                    width: { min: 320, ideal: 640, max: 800 },
-                    height: { min: 240, ideal: 480, max: 600 },
-                    frameRate: { ideal: 15, max: 30 },
-                    facingMode: { ideal: "environment" } // Use back camera for scanning
-                    // Remove advanced focus settings for older webcams
-                }
-            });
+                    Html5QrcodeSupportedFormats.UPC_A,
+                    Html5QrcodeSupportedFormats.UPC_E,
+                    Html5QrcodeSupportedFormats.CODABAR,
+                    Html5QrcodeSupportedFormats.CODE_93,
+                    Html5QrcodeSupportedFormats.MAXICODE,
+                    Html5QrcodeSupportedFormats.ITF,
+                    Html5QrcodeSupportedFormats.RSS_14,
+                    Html5QrcodeSupportedFormats.RSS_EXPANDED,
+                    Html5QrcodeSupportedFormats.UPC_EAN_EXTENSION
+                ];
+                console.log('📱 Scanner configured for Data Matrix codes (like yours!)');
+            } else {
+                // Fallback: don't specify formats, let the library detect automatically
+                console.log('Using automatic format detection for Data Matrix and other codes');
+            }
+            
+            // Optimized video constraints for Data Matrix detection
+            config.videoConstraints = {
+                width: { min: 640, ideal: 1280, max: 1920 }, // Higher resolution crucial for small Data Matrix
+                height: { min: 480, ideal: 720, max: 1080 },
+                frameRate: { ideal: 15, max: 20 }, // Good framerate for Data Matrix
+                facingMode: { ideal: "environment" }, // Use back camera for scanning
+                // Advanced settings for better focus on small codes
+                focusMode: { ideal: "continuous" },
+                whiteBalanceMode: { ideal: "continuous" }
+            };
+            
+            // Enable experimental features for better Data Matrix detection
+            config.experimentalFeatures = {
+                useBarCodeDetectorIfSupported: true // Use native barcode detector if available
+            };
+            
+            console.log('Scanner config:', config);
+            this.scanner = new Html5QrcodeScanner("reader", config);
 
+            console.log('Rendering scanner...');
             this.scanner.render(
+                // Success callback - this should fire when a QR code is detected
                 (decodedText, decodedResult) => {
-                    console.log('Successfully scanned:', decodedText);
+                    console.log('🎉🎉🎉 QR CODE SCAN SUCCESS! 🎉🎉🎉');
+                    console.log('Decoded text:', decodedText);
+                    console.log('Decoded result object:', decodedResult);
+                    console.log('Text length:', decodedText ? decodedText.length : 'undefined');
+                    console.log('Text type:', typeof decodedText);
+                    
+                    // IMPORTANT: Alert to make sure we see this in any case
+                    alert(`QR Code Scanned Successfully: ${decodedText}`);
+                    
+                    // Show immediate feedback
+                    this.showNotification(`✅ Scanned: ${decodedText}`, 'success');
+                    
+                    // Reset error counters
+                    this.multiFormatErrorCount = 0;
+
+                    // Handle the scan result
                     this.handleScanResult(decodedText);
-                    this.stopScanner();
+                    
+                    // Stop scanner after successful scan
+                    setTimeout(() => {
+                        this.stopScanner();
+                    }, 2000); // Brief delay to show the success message
                 },
+                // Error callback - this fires continuously while scanning
                 (error) => {
-                    // Only log errors that aren't just "no QR code found"
-                    if (!error.includes('NotFoundException') && !error.includes('No MultiFormat Readers')) {
+                    const errorString = error ? error.toString() : 'Unknown error';
+                    
+                    // Handle specific "No MultiFormat Readers" error
+                    if (errorString.includes('No MultiFormat Readers')) {
+                        console.log('📱 Scanner detected something but cannot decode format. Try:');
+                        console.log('- Better lighting');
+                        console.log('- Hold barcode steadier');
+                        console.log('- Different angle/distance');
+                        console.log('- Make sure barcode is not damaged');
+                        
+                        // Show user-friendly guidance (but not too frequently)
+                        if (!this.lastMultiFormatError || Date.now() - this.lastMultiFormatError > 2000) {
+                            this.showNotification('📱 Data Matrix detected! Get closer & hold steady.', 'warning');
+                            this.lastMultiFormatError = Date.now();
+                            
+                            // Show scanning tips
+                            const tipsElement = document.getElementById('scannerTips');
+                            if (tipsElement) {
+                                tipsElement.style.display = 'block';
+                                // Hide tips after 10 seconds for Data Matrix (needs more time)
+                                setTimeout(() => {
+                                    tipsElement.style.display = 'none';
+                                }, 10000);
+                            }
+                        }
+
+                        // Increment error counter and auto-fallback to native after threshold
+                        this.multiFormatErrorCount++;
+                        if (this.multiFormatErrorCount >= 12 && 'BarcodeDetector' in window) {
+                            this.showNotification('🔄 Switching to Native Scanner for Data Matrix…', 'info');
+                            // Avoid loop: stop this scanner and start native
+                            this.stopScanner().then(() => this.startNativeScanner());
+                        }
+                        return;
+                    }
+                    
+                    // Only log other errors that aren't just "no QR code found"
+                    if (!errorString.includes('NotFoundException') && 
+                        !errorString.includes('QR code not found') &&
+                        !errorString.includes('No code found') &&
+                        !errorString.includes('Code not found')) {
                         console.warn('QR Scanner error:', error);
                     }
                 }
             );
 
+            console.log('Scanner rendered successfully');
+            
             // Add manual focus functionality
             setTimeout(() => {
                 const video = document.querySelector('#reader video');
                 if (video) {
+                    console.log('Video element found, adding click listener');
                     video.addEventListener('click', () => {
                         this.triggerManualFocus(video);
                     });
@@ -184,17 +483,22 @@ class MedicineInventory {
                     // Add visual indicator for tap-to-focus
                     video.style.cursor = 'pointer';
                     video.title = 'Tap to focus';
+                } else {
+                    console.warn('Video element not found in #reader');
                 }
             }, 1000);
 
+            // Update UI
             document.getElementById('startScan').classList.add('hidden');
             document.getElementById('stopScan').classList.remove('hidden');
             document.getElementById('manualFocusBtn').classList.remove('hidden');
             document.getElementById('restartScannerBtn').classList.remove('hidden');
             document.getElementById('scannerStatus').classList.remove('hidden');
             
+            console.log('Scanner UI updated, scanner is ready');
+            
             // Show helpful message
-            this.showNotification('Point camera at QR code or barcode to scan. Tap video or use Focus button if blurry.', 'info');
+            this.showNotification('🎯 Scanner ready! Point camera at QR code or barcode.', 'info');
             
         } catch (error) {
             console.error('Scanner initialization error:', error);
@@ -244,6 +548,7 @@ class MedicineInventory {
 
     async restartScanner() {
         this.showNotification('Restarting camera...', 'info');
+        this.scannerRetryCount = 0; // Reset retry count
         await this.stopScanner();
         
         // Wait a moment before restarting
@@ -252,7 +557,38 @@ class MedicineInventory {
         }, 1000);
     }
 
+    // Test function to simulate a successful scan
+    testScanResult() {
+        console.log('🧪 Testing scan result processing...');
+        const testBarcode = '1234567890123'; // Test EAN-13 barcode
+        this.showNotification('🧪 Testing with sample barcode...', 'info');
+        
+        // Simulate the scan success callback
+        setTimeout(() => {
+            console.log('🎉🎉🎉 TEST QR CODE SCAN SUCCESS! 🎉🎉🎉');
+            console.log('Test decoded text:', testBarcode);
+            
+            // Show alert like real scan
+            alert(`Test QR Code Scanned Successfully: ${testBarcode}`);
+            
+            // Process like real scan
+            this.handleScanResult(testBarcode);
+        }, 500);
+    }
+
+    // Test function to simulate a successful QR scan
+    testScanResult() {
+        console.log('🧪 Testing QR scan result processing...');
+        const testBarcode = '1234567890123';
+        console.log('Simulating scan of test barcode:', testBarcode);
+        
+        // Simulate the exact same flow as a real scan
+        this.showNotification(`🧪 Test scan: ${testBarcode}`, 'info');
+        this.handleScanResult(testBarcode);
+    }
+
     async stopScanner() {
+        // Stop html5-qrcode scanner
         if (this.scanner) {
             try {
                 await this.scanner.clear();
@@ -262,6 +598,8 @@ class MedicineInventory {
             }
             this.scanner = null;
         }
+        // Stop native scanner if running
+        await this.stopNativeScanner();
         document.getElementById('startScan').classList.remove('hidden');
         document.getElementById('stopScan').classList.add('hidden');
         document.getElementById('manualFocusBtn').classList.add('hidden');
@@ -269,31 +607,260 @@ class MedicineInventory {
         document.getElementById('scannerStatus').classList.add('hidden');
     }
 
+    // -------------------------
+    // Native BarcodeDetector fallback (great for Data Matrix)
+    // -------------------------
+    async startNativeScanner() {
+        try {
+            if (!('BarcodeDetector' in window)) {
+                this.showNotification('BarcodeDetector not supported in this browser.', 'error');
+                return;
+            }
+
+            // Stop other scanners first
+            if (this.scanner) {
+                try { await this.scanner.clear(); } catch {}
+                this.scanner = null;
+            }
+            await this.stopNativeScanner();
+
+            // Setup UI container
+            const reader = document.getElementById('reader');
+            reader.innerHTML = '';
+
+            // Create video element
+            const video = document.createElement('video');
+            video.setAttribute('autoplay', '');
+            video.setAttribute('muted', '');
+            video.setAttribute('playsinline', '');
+            video.style.width = '100%';
+            video.style.maxWidth = '480px';
+            video.style.borderRadius = '8px';
+            reader.appendChild(video);
+            this.nativeVideo = video;
+
+            // Start camera
+            const constraints = {
+                video: {
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    frameRate: { ideal: 15, max: 20 },
+                    facingMode: { ideal: 'environment' }
+                },
+                audio: false
+            };
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            this.nativeStream = stream;
+            video.srcObject = stream;
+            await new Promise((res) => video.onloadedmetadata = () => res());
+            await video.play();
+
+            // Init detector prioritizing Data Matrix
+            const supported = (await window.BarcodeDetector.getSupportedFormats?.()) || [];
+            console.log('Native BarcodeDetector supported formats:', supported);
+            const wanted = ['data_matrix', 'qr_code', 'code_128', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_39'];
+            const formats = supported.length ? wanted.filter(f => supported.includes(f)) : wanted;
+            this.nativeDetector = new window.BarcodeDetector({ formats });
+            this.showNotification('🎯 Native scanner started (optimized for Data Matrix)…', 'info');
+
+            // UI buttons
+            document.getElementById('startScan').classList.add('hidden');
+            document.getElementById('stopScan').classList.remove('hidden');
+            document.getElementById('manualFocusBtn').classList.remove('hidden');
+            document.getElementById('restartScannerBtn').classList.remove('hidden');
+            document.getElementById('scannerStatus').classList.remove('hidden');
+
+            // Scan loop
+            const scan = async () => {
+                try {
+                    const barcodes = await this.nativeDetector.detect(video);
+                    if (barcodes && barcodes.length) {
+                        const best = barcodes[0];
+                        const value = best.rawValue || '';
+                        console.log('Native detected:', best.format, value);
+                        alert(`Detected (${best.format}): ${value}`);
+                        this.showNotification(`✅ ${best.format.toUpperCase()} scanned`, 'success');
+                        this.handleScanResult(value);
+                        await this.stopScanner();
+                        return;
+                    }
+                } catch (err) {
+                    // Ignore transient detection errors
+                }
+                this.nativeScanRAF = requestAnimationFrame(scan);
+            };
+            this.nativeScanRAF = requestAnimationFrame(scan);
+        } catch (error) {
+            console.error('Native scanner error:', error);
+            this.showNotification('Native scanner failed. Falling back to standard scanner.', 'error');
+            // Try html5 scanner as fallback
+            await this.startScanner();
+        }
+    }
+
+    async stopNativeScanner() {
+        if (this.nativeScanRAF) {
+            cancelAnimationFrame(this.nativeScanRAF);
+            this.nativeScanRAF = null;
+        }
+        if (this.nativeVideo) {
+            try { this.nativeVideo.pause(); } catch {}
+            this.nativeVideo.srcObject = null;
+            this.nativeVideo = null;
+        }
+        if (this.nativeStream) {
+            try {
+                this.nativeStream.getTracks().forEach(t => t.stop());
+            } catch {}
+            this.nativeStream = null;
+        }
+        this.nativeDetector = null;
+    }
+
     handleScanResult(decodedText) {
-        // Pre-fill the manual entry form with scanned data
-        document.getElementById('medicineCode').value = decodedText;
+        console.log('🔄 Processing scan result:', decodedText);
+        console.log('Raw scan data type:', typeof decodedText);
+        console.log('Raw scan data length:', decodedText ? decodedText.length : 'null/undefined');
         
-        // Try to fetch medicine info from barcode (you can integrate with medicine APIs)
-        this.fetchMedicineInfo(decodedText);
+        // Clean the scanned text (remove any whitespace)
+        const cleanedText = decodedText ? decodedText.trim() : '';
         
-        // Scroll to manual entry form
-        document.querySelector('.manual-entry').scrollIntoView({ behavior: 'smooth' });
+        if (!cleanedText) {
+            console.error('❌ Empty or invalid scan result');
+            this.showNotification('❌ Empty scan result. Please try again.', 'error');
+            return;
+        }
+        
+        // Try to parse GS1 Data Matrix with AIs like (01)(21)
+        const gs1 = this.parseGs1(cleanedText);
+        let displayCode = cleanedText;
+        if (gs1 && (gs1.gtin || gs1.serial)) {
+            displayCode = gs1.gtin ? (gs1.serial ? `${gs1.gtin}-${gs1.serial}` : gs1.gtin) : cleanedText;
+            console.log('Parsed GS1:', gs1);
+        }
+        
+        try {
+            // Pre-fill the manual entry form with scanned data (prefer GTIN-serial)
+            const medicineCodeInput = document.getElementById('medicineCode');
+            if (medicineCodeInput) {
+                medicineCodeInput.value = displayCode;
+                medicineCodeInput.dispatchEvent(new Event('input', { bubbles: true }));
+                console.log('Medicine code field updated with:', displayCode);
+            } else {
+                console.error('Medicine code input field not found');
+            }
+            
+            // Show success notification with the parsed data
+            if (gs1 && (gs1.gtin || gs1.serial)) {
+                const parts = [`GTIN: ${gs1.gtin || 'n/a'}`];
+                if (gs1.serial) parts.push(`Serial: ${gs1.serial}`);
+                this.showNotification(`📦 GS1 scanned • ${parts.join(' • ')}`, 'success');
+            } else {
+                this.showNotification(`📱 Code scanned: ${cleanedText}`, 'success');
+            }
+            
+            // Try to fetch medicine info from barcode
+            this.fetchMedicineInfo(displayCode);
+            
+            // Scroll to manual entry form and focus on medicine name field
+            const manualEntry = document.querySelector('.manual-entry');
+            if (manualEntry) {
+                manualEntry.scrollIntoView({ behavior: 'smooth' });
+                
+                // Focus on medicine name field after a short delay
+                setTimeout(() => {
+                    const medicineNameInput = document.getElementById('medicineName');
+                    if (medicineNameInput) {
+                        medicineNameInput.focus();
+                    }
+                }, 500);
+            }
+            
+        } catch (error) {
+            console.error('Error handling scan result:', error);
+            this.showNotification('❌ Error processing scan result. Please try manual entry.', 'error');
+        }
+    }
+
+    // Parse common GS1 Data (supports (01)GTIN and (21)Serial; also FNC1-separated)
+    parseGs1(text) {
+        try {
+            // Replace ASCII Group Separator with a marker to ease parsing
+            const GS = String.fromCharCode(29);
+            let t = text.replace(/\s+/g, '');
+            // Normalize brackets-less GS1 like 0108699...21... by inserting markers
+            // First, try bracketed format
+            let gtin = null, serial = null;
+            let m;
+            m = t.match(/\(01\)(\d{14})/);
+            if (m) gtin = m[1];
+            m = t.match(/\(21\)([^()]+?)(?:\(|$)/);
+            if (m) serial = m[1];
+
+            if (!gtin) {
+                // Try GS separator based: 01{14}GS?21{var}
+                // Replace GS with a separator
+                const norm = t.replace(new RegExp(GS, 'g'), '|');
+                let m2 = norm.match(/01(\d{14})/);
+                if (m2) gtin = m2[1];
+                // Serial is everything after AI 21 until next AI or end
+                m2 = norm.match(/21([0-9A-Za-z\-_.]{1,50})/);
+                if (m2) serial = m2[1];
+            }
+
+            if (!gtin) {
+                // Plain concatenated without GS: 01(14)21(var)
+                const m3 = t.match(/01(\d{14})21([0-9A-Za-z\-_.]{1,50})/);
+                if (m3) {
+                    gtin = m3[1];
+                    serial = m3[2];
+                }
+            }
+
+            if (gtin || serial) {
+                return { gtin, serial, raw: text };
+            }
+            return null;
+        } catch (e) {
+            return null;
+        }
     }
 
     async fetchMedicineInfo(barcode) {
+        console.log('Fetching medicine info for barcode:', barcode);
+        
+        // Show the barcode was processed
+        this.showNotification(`🔍 Processing barcode: ${barcode}`, 'info');
+        
         // This is where you could integrate with medicine databases
-        // For now, we'll just show the barcode
-        console.log('Scanned barcode:', barcode);
+        // For now, we'll just show the barcode and provide basic info
         
         // You could integrate with APIs like:
         // - FDA NDC Database
         // - Open Food Facts (for some medicines)
         // - Custom medicine database
         
-        // Placeholder logic - in real implementation, you'd make API calls
-        if (barcode.length > 0) {
-            // Auto-focus on medicine name field for user to enter
-            document.getElementById('medicineName').focus();
+        try {
+            // Placeholder logic - in real implementation, you'd make API calls
+            if (barcode.length > 0) {
+                console.log('Barcode processed successfully:', barcode);
+                
+                // Auto-focus on medicine name field for user to enter
+                setTimeout(() => {
+                    const medicineNameField = document.getElementById('medicineName');
+                    if (medicineNameField) {
+                        medicineNameField.focus();
+                        console.log('Medicine name field focused');
+                    }
+                }, 100);
+                
+                // Show success message
+                setTimeout(() => {
+                    this.showNotification(`✅ Ready to add medicine with code: ${barcode}`, 'success');
+                }, 1500);
+            }
+        } catch (error) {
+            console.error('Error fetching medicine info:', error);
         }
     }
 
@@ -795,6 +1362,10 @@ class MedicineInventory {
         localStorage.setItem('transfers', JSON.stringify(this.transfers));
         localStorage.setItem('settings', JSON.stringify(this.settings));
         this.updateDataStatus();
+        // Push to cloud (debounced) if enabled
+        if (this.settings.cloudSync?.enabled) {
+            this.debouncedCloudSave();
+        }
     }
 
     clearForm() {
@@ -845,6 +1416,117 @@ class MedicineInventory {
                 }
             }, 300);
         }, 3000);
+    }
+
+    // ===== Cloud Sync (Beta) via Firebase Firestore (client-only) =====
+    updateCloudUI() {
+        const cloudStatusEl = document.getElementById('cloudSyncStatus');
+        if (cloudStatusEl) {
+            const cs = this.settings.cloudSync || {};
+            cloudStatusEl.value = cs.enabled ? 'Enabled' : 'Disabled';
+        }
+    }
+
+    randomId(n = 8) {
+        const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+        let s = '';
+        for (let i = 0; i < n; i++) s += chars[Math.floor(Math.random() * chars.length)];
+        return s;
+    }
+
+    async maybeStartCloudSync(restart = false) {
+        const cs = this.settings.cloudSync || {};
+        if (!cs.enabled || !cs.workspaceId || !cs.firebaseConfig) {
+            await this.stopCloudSync();
+            return;
+        }
+        if (restart) await this.stopCloudSync();
+        if (this.cloud.unsub) return; // already running
+        try {
+            await this.ensureFirebaseLoaded();
+            // init app
+            this.cloud.app = firebase.apps?.length ? firebase.app() : firebase.initializeApp(cs.firebaseConfig);
+            this.cloud.db = firebase.firestore();
+            const docRef = this.cloud.db.collection('workspaces').doc(cs.workspaceId);
+
+            // Real-time listener
+            this.cloud.unsub = docRef.onSnapshot((snap) => {
+                if (!snap.exists) return;
+                const data = snap.data();
+                // Avoid applying changes we just wrote
+                if (data.__lastWriter === this.cloud.clientId) return;
+                this.cloud.lastRemoteUpdate = Date.now();
+                // Merge remote state
+                if (Array.isArray(data.inventory)) this.inventory = data.inventory;
+                if (Array.isArray(data.locations)) this.locations = data.locations;
+                if (Array.isArray(data.transfers)) this.transfers = data.transfers;
+                // Keep local settings, but update lastBackupReminder opt.
+                this.updateInventoryDisplay();
+                this.updateStats();
+                this.populateLocationSelects();
+                this.populateTransferItems();
+                this.displayTransferHistory();
+                this.displayLocations();
+                this.saveData(); // persists and triggers UI status
+                this.showNotification('☁️ Changes synced from cloud', 'info');
+            }, (err) => console.warn('Cloud sync listener error:', err));
+
+            // Prepare debounced save
+            this.debouncedCloudSave = this.debounce(async () => {
+                try {
+                    const payload = {
+                        inventory: this.inventory,
+                        locations: this.locations,
+                        transfers: this.transfers,
+                        __lastWriter: this.cloud.clientId,
+                        __updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    };
+                    await docRef.set(payload, { merge: true });
+                    console.log('Cloud sync: state pushed');
+                } catch (e) {
+                    console.warn('Cloud push failed:', e);
+                }
+            }, 800);
+
+            this.showNotification('☁️ Cloud sync connected', 'success');
+        } catch (e) {
+            console.warn('Cloud sync failed to start:', e);
+            this.showNotification('Cloud sync failed to start. Check Firebase config.', 'error');
+        }
+    }
+
+    async stopCloudSync() {
+        if (this.cloud.unsub) {
+            try { this.cloud.unsub(); } catch {}
+            this.cloud.unsub = null;
+        }
+        this.cloud.app = null;
+        this.cloud.db = null;
+        this.debouncedCloudSave = () => {};
+    }
+
+    debounce(fn, wait) {
+        let t = null;
+        return (...args) => {
+            clearTimeout(t);
+            t = setTimeout(() => fn.apply(this, args), wait);
+        };
+    }
+
+    async ensureFirebaseLoaded() {
+        if (window.firebase?.firestore) return;
+        await this.loadScript('https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js');
+        await this.loadScript('https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js');
+    }
+
+    async loadScript(src) {
+        return new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = src;
+            s.onload = resolve;
+            s.onerror = reject;
+            document.head.appendChild(s);
+        });
     }
 
     checkBackupReminder() {
@@ -917,6 +1599,151 @@ class MedicineInventory {
                 statusElement.textContent = `📊 ${itemCount} medicines (${totalQuantity} total) - ✅ Recently backed up`;
                 statusElement.style.background = 'rgba(40,167,69,0.8)';
             }
+        }
+    }
+
+    // ===== Auto Backup (File System Access API) =====
+    updateBackupUI() {
+        const folderPathEl = document.getElementById('backupFolderPath');
+        const lastBackupInfo = document.getElementById('lastBackupInfo');
+        if (folderPathEl) {
+            folderPathEl.textContent = this.settings.autoBackup?.folderGranted ? 'Folder selected' : 'No folder selected';
+        }
+        if (lastBackupInfo) {
+            lastBackupInfo.textContent = this.settings.autoBackup?.lastAutoBackup
+                ? `Last backup: ${new Date(this.settings.autoBackup.lastAutoBackup).toLocaleString()}`
+                : 'No backup yet';
+        }
+    }
+
+    async chooseBackupFolder() {
+        if (!('showDirectoryPicker' in window)) {
+            alert('Your browser does not support folder access. Use Chrome/Edge desktop.');
+            return;
+        }
+        try {
+            const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+            await this._storeBackupDirHandle(dirHandle);
+            this.settings.autoBackup.folderGranted = true;
+            this.saveData();
+            this.updateBackupUI();
+            this.showNotification('📁 Backup folder selected', 'success');
+        } catch (e) {
+            if (e?.name !== 'AbortError') this.showNotification('Folder selection failed', 'error');
+        }
+    }
+
+    async _openBackupDb() {
+        if (!this._backupDbPromise) {
+            this._backupDbPromise = new Promise((resolve, reject) => {
+                const req = indexedDB.open('medicine-inventory-backup', 1);
+                req.onupgradeneeded = () => {
+                    const db = req.result;
+                    if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
+                };
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        }
+        return this._backupDbPromise;
+    }
+
+    async _storeBackupDirHandle(handle) {
+        const db = await this._openBackupDb();
+        await new Promise((resolve, reject) => {
+            const tx = db.transaction('kv', 'readwrite');
+            tx.objectStore('kv').put(handle, 'backupDir');
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+
+    async _getBackupDirHandle() {
+        const db = await this._openBackupDb();
+        return await new Promise((resolve, reject) => {
+            const tx = db.transaction('kv', 'readonly');
+            const req = tx.objectStore('kv').get('backupDir');
+            req.onsuccess = () => resolve(req.result || null);
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    _shouldRunAutoBackup(now = new Date()) {
+        const ab = this.settings.autoBackup || {};
+        if (!ab.enabled || !ab.folderGranted) return false;
+        const last = ab.lastAutoBackup ? new Date(ab.lastAutoBackup) : null;
+        if (!last) return true;
+        const ms = now - last;
+        const day = 24 * 60 * 60 * 1000;
+        if (ab.frequency === 'daily') return ms >= day;
+        if (ab.frequency === 'weekly') return ms >= 7 * day;
+        if (ab.frequency === 'monthly') return ms >= 30 * day;
+        return false;
+    }
+
+    async runAutoBackup(force = false) {
+        try {
+            if (!force && !this._shouldRunAutoBackup()) return;
+            const dirHandle = await this._getBackupDirHandle();
+            if (!dirHandle) {
+                if (force) this.showNotification('No backup folder selected', 'error');
+                return;
+            }
+            // Permissions
+            let perm = await dirHandle.queryPermission?.({ mode: 'readwrite' });
+            if (perm !== 'granted') {
+                perm = await dirHandle.requestPermission?.({ mode: 'readwrite' });
+                if (perm !== 'granted') {
+                    this.showNotification('Permission to write backups denied', 'error');
+                    return;
+                }
+            }
+
+            // Build data
+            const data = {
+                inventory: this.inventory,
+                locations: this.locations,
+                transfers: this.transfers,
+                settings: this.settings,
+                exportDate: new Date().toISOString(),
+                appVersion: '1.0.0'
+            };
+            const ts = new Date();
+            const fname = `medicine-inventory-${ts.getFullYear()}${String(ts.getMonth()+1).padStart(2,'0')}${String(ts.getDate()).padStart(2,'0')}-${String(ts.getHours()).padStart(2,'0')}${String(ts.getMinutes()).padStart(2,'0')}.json`;
+            const fileHandle = await dirHandle.getFileHandle(fname, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+            await writable.close();
+
+            // Retention
+            await this._enforceBackupRetention(dirHandle, this.settings.autoBackup?.retention || 30);
+
+            // Update state
+            this.settings.autoBackup.lastAutoBackup = ts.toISOString();
+            this.saveData();
+            this.updateBackupUI();
+            this.showNotification('✅ Auto backup saved', 'success');
+        } catch (e) {
+            console.error('Auto backup failed:', e);
+            this.showNotification('Auto backup failed', 'error');
+        }
+    }
+
+    async _enforceBackupRetention(dirHandle, keepCount) {
+        try {
+            const list = [];
+            for await (const entry of dirHandle.values()) {
+                if (entry.kind === 'file' && /medicine-inventory-\d{8}-\d{4}\.json$/.test(entry.name)) {
+                    list.push(entry.name);
+                }
+            }
+            list.sort();
+            while (list.length > keepCount) {
+                const oldest = list.shift();
+                await dirHandle.removeEntry(oldest);
+            }
+        } catch (e) {
+            console.warn('Retention cleanup warning:', e);
         }
     }
 }

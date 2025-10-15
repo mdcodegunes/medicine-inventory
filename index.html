@@ -32,10 +32,20 @@
                     <li>⏳ Wait 3-5 seconds for camera to adjust</li>
                     <li>📱 If blurry, slowly move closer/farther until clear</li>
                     <li>🔄 Try rotating the barcode 90 degrees</li>
-                    <li>�️ Use larger barcodes if possible</li>
+                    <li>📦 Use larger barcodes if possible</li>
                     <li>⚡ Close other apps using camera to improve performance</li>
+                    <li>🎯 <strong>If "No MultiFormat Readers" error:</strong> Hold barcode VERY steady, ensure good contrast</li>
+                    <li>🔄 Try different angles - sometimes 45° works better than straight on</li>
                 </ul>
-                <p>🔍 <strong>Supported formats:</strong> QR codes, UPC, EAN, Code 128, Code 39, and more</p>
+                <p>🔍 <strong>Supported formats:</strong> Data Matrix (like yours!), QR codes, UPC, EAN, Code 128, and more</p>
+                <p>📱 <strong>For Data Matrix codes (small square patterns):</strong></p>
+                <ul style="margin-top: 5px; font-size: 0.9em;">
+                    <li>🔍 Get VERY close (3-6 inches) - these codes are small!</li>
+                    <li>💡 Use maximum brightness/lighting</li>
+                    <li>🎯 Center the code exactly in the scanning box</li>
+                    <li>⚡ Hold extremely steady - any movement blurs small codes</li>
+                    <li>🔄 Try slightly different angles if not working</li>
+                </ul>
             </div>
             <div id="reader" class="scanner-container"></div>
             <div class="scanner-controls">
@@ -43,9 +53,20 @@
                 <button id="stopScan" class="hidden">⏹️ Stop Scanner</button>
                 <button id="manualFocusBtn" class="hidden" onclick="medicineApp.triggerManualFocus()">🎯 Focus</button>
                 <button id="restartScannerBtn" class="hidden" onclick="medicineApp.restartScanner()">🔄 Restart Camera</button>
+                <button id="nativeScanBtn" class="hidden" title="Uses browser's built‑in barcode detector if available">🧪 Native Scanner (Beta)</button>
+                <button id="testScanBtn" style="background-color: #ff6b35; margin-top: 10px;" onclick="medicineApp.testScanResult()">🧪 Test Scan (Debug)</button>
             </div>
             <div id="scannerStatus" class="scanner-status hidden">
                 <p id="statusText">Ready to scan</p>
+                <div id="scannerTips" class="scanner-tips" style="display: none; margin-top: 10px; padding: 10px; background-color: #fff3cd; border-radius: 5px; font-size: 0.9em;">
+                    <strong>💡 Data Matrix Scanning Tips:</strong><br>
+                    • Get MUCH closer (3-6 inches) for small codes<br>
+                    • Use maximum lighting - Data Matrix needs bright light<br>
+                    • Center the square pattern exactly in the scan box<br>
+                    • Hold extremely steady - small codes are sensitive to movement<br>
+                    • Try 90° rotation if horizontal doesn't work<br>
+                    • Make sure the code isn't wrinkled or damaged
+                </div>
             </div>
             
             <!-- Manual Entry Form -->
@@ -179,6 +200,70 @@
                 <button id="importBtn">📥 Import Data</button>
                 <button id="clearDataBtn" class="danger">🗑️ Clear All Data</button>
                 <input type="file" id="importFile" accept=".json" style="display: none;">
+            </div>
+
+            <div class="settings-group">
+                <h3>Auto Backup (Local Folder)</h3>
+                <label style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                    <input type="checkbox" id="autoBackupEnabled">
+                    Enable automatic backups to a folder
+                </label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                    <label>
+                        Frequency
+                        <select id="autoBackupFrequency">
+                            <option value="daily">Daily</option>
+                            <option value="weekly" selected>Weekly</option>
+                            <option value="monthly">Monthly</option>
+                        </select>
+                    </label>
+                    <label>
+                        Keep last
+                        <select id="autoBackupRetention">
+                            <option value="7">7</option>
+                            <option value="14">14</option>
+                            <option value="30" selected>30</option>
+                            <option value="90">90</option>
+                        </select>
+                        versions
+                    </label>
+                </div>
+                <div style="display:flex; gap:10px; align-items:center; flex-wrap: wrap;">
+                    <button id="chooseBackupFolderBtn">📁 Choose Folder</button>
+                    <span id="backupFolderPath" style="opacity:0.8;">No folder selected</span>
+                </div>
+                <div style="margin-top:10px; display:flex; gap:10px; flex-wrap: wrap;">
+                    <button id="runBackupNowBtn">💾 Run Backup Now</button>
+                    <span id="lastBackupInfo" style="opacity:0.8;">No backup yet</span>
+                </div>
+                <p style="margin-top:8px; opacity:0.8;">Tip: choose a OneDrive/Google Drive sync folder to get cloud protection automatically.</p>
+            </div>
+
+            <div class="settings-group">
+                <h3>Cloud Sync (Beta)</h3>
+                <p style="opacity:0.85; margin-top:0;">Collaborate in real time by sharing a workspace ID and using your Firebase project (no server needed).</p>
+                <label style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                    <input type="checkbox" id="cloudSyncEnabled"> Enable Cloud Sync
+                </label>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                    <label>
+                        Workspace ID
+                        <input type="text" id="cloudWorkspaceId" placeholder="auto-generated">
+                    </label>
+                    <label>
+                        Status
+                        <input type="text" id="cloudSyncStatus" disabled value="Disabled">
+                    </label>
+                </div>
+                <label style="display:block; margin-top:10px;">
+                    Firebase Config (JSON from Firebase console)
+                    <textarea id="firebaseConfig" rows="5" style="width:100%; font-family:monospace;"></textarea>
+                </label>
+                <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
+                    <button id="saveCloudConfigBtn">💾 Save Cloud Settings</button>
+                    <button id="copyShareLinkBtn">🔗 Copy Share Link</button>
+                </div>
+                <p style="margin-top:8px; opacity:0.8;">Share the link with teammates. Everyone uses the same Workspace ID and Firebase config.</p>
             </div>
         </section>
     </div>

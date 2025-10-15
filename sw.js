@@ -1,4 +1,4 @@
-const CACHE_NAME = 'medicine-inventory-v1';
+const CACHE_NAME = 'medicine-inventory-v2';
 const urlsToCache = [
     '/',
     '/index.html',
@@ -13,6 +13,7 @@ self.addEventListener('install', (event) => {
             .then((cache) => {
                 return cache.addAll(urlsToCache);
             })
+            .then(() => self.skipWaiting())
     );
 });
 
@@ -24,5 +25,16 @@ self.addEventListener('fetch', (event) => {
                 return response || fetch(event.request);
             }
         )
+    );
+});
+
+self.addEventListener('activate', (event) => {
+    event.waitUntil(
+        (async () => {
+            // Clear old caches
+            const keys = await caches.keys();
+            await Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
+            await self.clients.claim();
+        })()
     );
 });
