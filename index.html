@@ -14,6 +14,7 @@
             <nav>
                 <button id="addItemBtn" class="nav-btn add-btn">➕ İlaç Ekle</button>
                 <button id="inventoryBtn" class="nav-btn active">📋 Envanter</button>
+                <button id="transferBtn" class="nav-btn">🔄 Transfer</button>
                 <button id="settingsBtn" class="nav-btn">⚙️ Ayarlar</button>
             </nav>
             <div id="dataStatus">📊 Kayıtlı ilaç yok</div>
@@ -73,6 +74,39 @@
 
             <div id="inventoryList" class="inventory-list">
                 <!-- Inventory items will be populated here -->
+            </div>
+        </section>
+
+        <!-- Transfer Section -->
+        <section id="transferSection" class="section hidden">
+            <h2>İlaç Transferi</h2>
+            <form id="transferForm">
+                <select id="transferItem" required>
+                    <option value="">Taşınacak ilacı seçin</option>
+                </select>
+                <div class="transfer-locations">
+                    <div>
+                        <label for="fromLocation">Kaynak</label>
+                        <select id="fromLocation" required>
+                            <option value="">Kaynak Konumu Seçin</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="toLocation">Hedef</label>
+                        <select id="toLocation" required>
+                            <option value="">Hedef Konumu Seçin</option>
+                        </select>
+                    </div>
+                </div>
+                <input type="number" id="transferQuantity" placeholder="Aktarılacak adet" min="1" required>
+                <button type="submit">Transfer Et</button>
+            </form>
+
+            <div id="transferHistory" class="transfer-history">
+                <h3>Son Transferler</h3>
+                <div id="transferList">
+                    <!-- Transfer geçmişi buraya gelecek -->
+                </div>
             </div>
         </section>
 
