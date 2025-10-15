@@ -1,4 +1,4 @@
-const CACHE_NAME = 'medicine-inventory-v4';
+const CACHE_NAME = 'medicine-inventory-v5';
 // Derive base path from service worker scope so it works on GitHub Pages subpaths
 const SCOPE_PATH = new URL(self.registration.scope).pathname; // e.g. /medicine-inventory/
 const urlsToCache = [
