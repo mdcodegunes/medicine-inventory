@@ -911,11 +911,23 @@ class MedicineInventory {
                 this.saveData(); // persists and triggers UI status
                 this.showNotification('☁️ Changes synced from cloud', 'info');
                 this.setCloudStatus('connected', 'success');
-            }, (err) => console.warn('Cloud sync listener error:', err));
+            }, (err) => {
+                console.warn('Cloud sync listener error:', err);
+                this.showNotification(`Cloud listener error: ${err?.message || err}`, 'error');
+                this.setCloudStatus('listener error', 'error');
+            });
 
             // Prepare debounced save
             this.debouncedCloudSave = this.debounce(async () => {
                 try {
+                    // Ensure signed-in when rules require auth
+                    try {
+                        if (this.cloud?.app?.auth && !this.cloud.app.auth().currentUser) {
+                            await this.ensureAuthSignedIn();
+                        }
+                    } catch (authRetryErr) {
+                        console.warn('Auth retry before push failed:', authRetryErr);
+                    }
                     const payload = {
                         inventory: this.inventory,
                         locations: this.locations,
