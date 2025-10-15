@@ -1388,7 +1388,8 @@ class MedicineInventory {
             } catch (_) {
                 this.cloud.app = firebase.initializeApp(cs.firebaseConfig, 'medicine-inventory');
             }
-            this.cloud.db = firebase.firestore();
+            // Use the named app instance to get Firestore (avoids missing [DEFAULT] app error)
+            this.cloud.db = this.cloud.app.firestore();
             const docRef = this.cloud.db.collection('workspaces').doc(cs.workspaceId);
 
             // Basic connectivity read (helps expose permission errors early)
