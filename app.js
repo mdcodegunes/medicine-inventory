@@ -66,16 +66,6 @@ class MedicineInventory {
 
     init() {
         this.setupEventListeners();
-        this.showSection('inventory');
-        this.updateInventoryDisplay();
-        this.updateStats();
-        this.populateLocationSelects();
-        this.populateTransferItems();
-        this.displayTransferHistory();
-        this.displayLocations();
-        this.updateDataStatus();
-        // Auto-backup removed
-
         // Parse workspace id from URL (?ws=XXXX)
         try {
             const params = new URLSearchParams(window.location.search);
@@ -91,8 +81,19 @@ class MedicineInventory {
             }
         } catch {}
 
-        // Start cloud sync automatically when config+workspace are present
+        // Start cloud sync automatically when config+workspace are present ASAP
         this.maybeStartCloudSync(true);
+
+        // Initial UI render
+        this.showSection('inventory');
+        this.updateInventoryDisplay();
+        this.updateStats();
+        this.populateLocationSelects();
+        this.populateTransferItems();
+        this.displayTransferHistory();
+        this.displayLocations();
+        this.updateDataStatus();
+        // Auto-backup removed
     }
 
     ensureWorkspaceInUrl(ws) {

@@ -1,12 +1,11 @@
-const CACHE_NAME = 'medicine-inventory-v3';
+const CACHE_NAME = 'medicine-inventory-v4';
 // Derive base path from service worker scope so it works on GitHub Pages subpaths
 const SCOPE_PATH = new URL(self.registration.scope).pathname; // e.g. /medicine-inventory/
 const urlsToCache = [
     SCOPE_PATH,
     SCOPE_PATH + 'index.html',
     SCOPE_PATH + 'styles.css',
-    SCOPE_PATH + 'app.js',
-    'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'
+    SCOPE_PATH + 'app.js'
 ];
 
 self.addEventListener('install', (event) => {
@@ -20,13 +19,28 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-    event.respondWith(
-        caches.match(event.request)
-            .then((response) => {
-                // Return cached version or fetch from network
-                return response || fetch(event.request);
+    // For navigation requests (HTML), prefer network first so URL params are respected
+    if (event.request.mode === 'navigate') {
+        event.respondWith((async () => {
+            try {
+                const networkResponse = await fetch(event.request);
+                const cache = await caches.open(CACHE_NAME);
+                // Update cached index for offline
+                cache.put(SCOPE_PATH + 'index.html', networkResponse.clone());
+                return networkResponse;
+            } catch (e) {
+                // Offline fallback to cached index
+                return (await caches.match(SCOPE_PATH + 'index.html'))
+                    || (await caches.match(SCOPE_PATH))
+                    || Response.error();
             }
-        )
+        })());
+        return;
+    }
+    // For other requests, cache-first fallback to network
+    event.respondWith(
+        caches.match(event.request, { ignoreSearch: false })
+            .then((response) => response || fetch(event.request))
     );
 });
 
