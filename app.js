@@ -82,8 +82,8 @@ class MedicineInventory {
             }
         } catch {}
 
-        // Start cloud sync if enabled
-        this.maybeStartCloudSync();
+        // Start cloud sync automatically when config+workspace are present
+        this.maybeStartCloudSync(true);
     }
 
     setupEventListeners() {
@@ -131,61 +131,7 @@ class MedicineInventory {
 
         // Auto-backup UI removed
 
-        // Cloud Sync controls
-        const cloudEnabledEl = document.getElementById('cloudSyncEnabled');
-        const cloudWsEl = document.getElementById('cloudWorkspaceId');
-        const cloudStatusEl = document.getElementById('cloudSyncStatus');
-        const cloudCfgEl = document.getElementById('firebaseConfig');
-        const saveCloudBtn = document.getElementById('saveCloudConfigBtn');
-        const shareLinkBtn = document.getElementById('copyShareLinkBtn');
-        if (cloudEnabledEl && cloudWsEl && cloudStatusEl && cloudCfgEl && saveCloudBtn && shareLinkBtn) {
-            // Initialize from settings
-            const cs = this.settings.cloudSync || {};
-            cloudEnabledEl.checked = !!cs.enabled;
-            cloudWsEl.value = cs.workspaceId || '';
-            cloudCfgEl.value = cs.firebaseConfig ? JSON.stringify(cs.firebaseConfig, null, 2) : '';
-            this.updateCloudUI();
-
-            cloudEnabledEl.addEventListener('change', () => {
-                if (!this.settings.cloudSync) this.settings.cloudSync = {};
-                this.settings.cloudSync.enabled = cloudEnabledEl.checked;
-                this.saveData();
-                this.updateCloudUI();
-                this.maybeStartCloudSync(true);
-            });
-            cloudWsEl.addEventListener('input', () => {
-                if (!this.settings.cloudSync) this.settings.cloudSync = {};
-                this.settings.cloudSync.workspaceId = cloudWsEl.value.trim();
-                this.saveData();
-            });
-            saveCloudBtn.addEventListener('click', () => {
-                try {
-                    const cfg = JSON.parse(cloudCfgEl.value || '{}');
-                    if (!this.settings.cloudSync) this.settings.cloudSync = {};
-                    this.settings.cloudSync.firebaseConfig = cfg;
-                    this.saveData();
-                    this.showNotification('Cloud settings saved', 'success');
-                    this.maybeStartCloudSync(true);
-                    // Trigger an immediate push to Firestore so others see data
-                    if (this.debouncedCloudSave) this.debouncedCloudSave();
-                } catch (e) {
-                    alert('Invalid Firebase config JSON');
-                }
-            });
-            shareLinkBtn.addEventListener('click', async () => {
-                if (!this.settings.cloudSync?.workspaceId) {
-                    // Create a random workspace id if missing
-                    const id = this.randomId(8);
-                    this.settings.cloudSync = this.settings.cloudSync || {};
-                    this.settings.cloudSync.workspaceId = id;
-                    cloudWsEl.value = id;
-                    this.saveData();
-                }
-                const url = `${window.location.origin}${window.location.pathname}?ws=${encodeURIComponent(this.settings.cloudSync.workspaceId)}`;
-                try { await navigator.clipboard.writeText(url); } catch {}
-                this.showNotification('Share link copied to clipboard', 'success');
-            });
-        }
+        // Cloud Sync UI removed; syncing is automatic. Keep share link helper via console.
 
         // Details Panel
         document.getElementById('closeDetailsBtn').addEventListener('click', () => {
@@ -1399,13 +1345,7 @@ class MedicineInventory {
     }
 
     // ===== Cloud Sync (Beta) via Firebase Firestore (client-only) =====
-    updateCloudUI() {
-        const cloudStatusEl = document.getElementById('cloudSyncStatus');
-        if (cloudStatusEl) {
-            const cs = this.settings.cloudSync || {};
-            cloudStatusEl.value = cs.enabled ? 'Enabled' : 'Disabled';
-        }
-    }
+    updateCloudUI() {}
 
     randomId(n = 8) {
         const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -1416,7 +1356,7 @@ class MedicineInventory {
 
     async maybeStartCloudSync(restart = false) {
         const cs = this.settings.cloudSync || {};
-        if (!cs.enabled || !cs.workspaceId || !cs.firebaseConfig) {
+        if (!cs.workspaceId || !cs.firebaseConfig) {
             await this.stopCloudSync();
             return;
         }

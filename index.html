@@ -204,32 +204,7 @@
 
             <!-- Auto Backup (Local Folder) removed: Cloud Sync saves changes automatically when enabled. -->
 
-            <div class="settings-group">
-                <h3>Cloud Sync (Beta)</h3>
-                <p style="opacity:0.85; margin-top:0;">Collaborate in real time by sharing a workspace ID and using your Firebase project (no server needed).</p>
-                <label style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
-                    <input type="checkbox" id="cloudSyncEnabled"> Enable Cloud Sync
-                </label>
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-                    <label>
-                        Workspace ID
-                        <input type="text" id="cloudWorkspaceId" placeholder="auto-generated">
-                    </label>
-                    <label>
-                        Status
-                        <input type="text" id="cloudSyncStatus" disabled value="Disabled">
-                    </label>
-                </div>
-                <label style="display:block; margin-top:10px;">
-                    Firebase Config (JSON from Firebase console)
-                    <textarea id="firebaseConfig" rows="5" style="width:100%; font-family:monospace;"></textarea>
-                </label>
-                <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
-                    <button id="saveCloudConfigBtn">💾 Save Cloud Settings</button>
-                    <button id="copyShareLinkBtn">🔗 Copy Share Link</button>
-                </div>
-                <p style="margin-top:8px; opacity:0.8;">Share the link with teammates. Everyone uses the same Workspace ID and Firebase config.</p>
-            </div>
+            <!-- Cloud Sync settings removed. Sync is automatic with embedded config and Workspace ID (use ?ws= to change). -->
         </section>
     </div>
 
