@@ -65,7 +65,7 @@ class MedicineInventory {
 
     init() {
         this.setupEventListeners();
-        this.showSection('inventory');
+    this.showSection('inventory');
         this.updateInventoryDisplay();
         this.updateStats();
         this.populateLocationSelects();
@@ -92,626 +92,41 @@ class MedicineInventory {
     }
 
     setupEventListeners() {
-        // Navigation
-        document.getElementById('scanBtn').addEventListener('click', () => this.showSection('scanner'));
+        // Navigation (Scan removed)
         document.getElementById('inventoryBtn').addEventListener('click', () => this.showSection('inventory'));
         document.getElementById('transferBtn').addEventListener('click', () => this.showSection('transfer'));
         document.getElementById('settingsBtn').addEventListener('click', () => this.showSection('settings'));
 
-        // Scanner
-        document.getElementById('startScan').addEventListener('click', () => this.startScanner());
-        document.getElementById('stopScan').addEventListener('click', () => this.stopScanner());
-        // Native scanner (ensure button exists even if HTML was cached)
-        let nativeBtn = document.getElementById('nativeScanBtn');
-        if (!nativeBtn) {
-            nativeBtn = this.ensureNativeScanButton();
-        }
-        if (nativeBtn) {
-            nativeBtn.addEventListener('click', () => this.startNativeScanner());
-            // Show the button only if supported
-            if ('BarcodeDetector' in window) {
-                nativeBtn.classList.remove('hidden');
-            } else {
-                nativeBtn.classList.add('hidden');
-            }
-        }
-
         // Manual entry
-        document.getElementById('manualEntryForm').addEventListener('submit', (e) => this.handleManualEntry(e));
+        const manualForm = document.getElementById('manualEntryForm');
+        if (manualForm) manualForm.addEventListener('submit', (e) => this.handleManualEntry(e));
 
         // Inventory filters
-        document.getElementById('locationFilter').addEventListener('change', () => this.updateInventoryDisplay());
-        document.getElementById('searchBox').addEventListener('input', () => this.updateInventoryDisplay());
-        document.getElementById('exportBtn').addEventListener('click', () => this.exportData());
+        const locFilter = document.getElementById('locationFilter');
+        if (locFilter) locFilter.addEventListener('change', () => this.updateInventoryDisplay());
+        const searchBox = document.getElementById('searchBox');
+        if (searchBox) searchBox.addEventListener('input', () => this.updateInventoryDisplay());
+        const exportBtn = document.getElementById('exportBtn');
+        if (exportBtn) exportBtn.addEventListener('click', () => this.exportData());
 
         // Transfer
-        document.getElementById('transferForm').addEventListener('submit', (e) => this.handleTransfer(e));
+        const transferForm = document.getElementById('transferForm');
+        if (transferForm) transferForm.addEventListener('submit', (e) => this.handleTransfer(e));
 
         // Settings
-        document.getElementById('addLocationBtn').addEventListener('click', () => this.addLocation());
-        document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importFile').click());
-        document.getElementById('importFile').addEventListener('change', (e) => this.importData(e));
-        document.getElementById('clearDataBtn').addEventListener('click', () => this.clearAllData());
-        document.getElementById('expirationAlert').addEventListener('change', (e) => this.updateSettings(e));
-
-        // Auto-backup UI removed
-
-        // Cloud Sync UI removed; syncing is automatic. Keep share link helper via console.
-
-        // Details Panel
-        document.getElementById('closeDetailsBtn').addEventListener('click', () => {
-            this.closeDetailsPanel();
-        });
-        
-        document.getElementById('deleteItemBtn').addEventListener('click', () => {
-            this.deleteItem(this.currentItemId);
-        });
-        
-        document.getElementById('editItemBtn').addEventListener('click', () => {
-            this.editItem(this.currentItemId);
-        });
-
-        // Close details panel with Escape key
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && !document.getElementById('itemDetailsPanel').classList.contains('hidden')) {
-                this.closeDetailsPanel();
-            }
-        });
+        const addLocBtn = document.getElementById('addLocationBtn');
+        if (addLocBtn) addLocBtn.addEventListener('click', () => this.addLocation());
+        const importBtn = document.getElementById('importBtn');
+        if (importBtn) importBtn.addEventListener('click', () => document.getElementById('importFile').click());
+        const importFile = document.getElementById('importFile');
+        if (importFile) importFile.addEventListener('change', (e) => this.importData(e));
+        const clearBtn = document.getElementById('clearDataBtn');
+        if (clearBtn) clearBtn.addEventListener('click', () => this.clearAllData());
+        const expAlert = document.getElementById('expirationAlert');
+        if (expAlert) expAlert.addEventListener('change', (e) => this.updateSettings(e));
     }
 
-    // Create Native Scanner button dynamically if missing (handles SW-cached HTML)
-    ensureNativeScanButton() {
-        try {
-            const controls = document.querySelector('.scanner-controls');
-            if (!controls) return null;
-            const btn = document.createElement('button');
-            btn.id = 'nativeScanBtn';
-            btn.title = "Uses browser's built‑in barcode detector if available";
-            btn.textContent = '🧪 Native Scanner (Beta)';
-            btn.classList.add('hidden');
-            // Insert before test button if present
-            const testBtn = document.getElementById('testScanBtn');
-            if (testBtn) {
-                controls.insertBefore(btn, testBtn);
-            } else {
-                controls.appendChild(btn);
-            }
-            return btn;
-        } catch (e) {
-            console.warn('Could not inject native scan button:', e);
-            return null;
-        }
-    }
-
-    showSection(sectionName) {
-        // Hide all sections
-        document.querySelectorAll('.section').forEach(section => {
-            section.classList.add('hidden');
-        });
-
-        // Remove active class from all nav buttons
-        document.querySelectorAll('.nav-btn').forEach(btn => {
-            btn.classList.remove('active');
-        });
-
-        // Show selected section
-        document.getElementById(sectionName + 'Section').classList.remove('hidden');
-        document.getElementById(sectionName + 'Btn').classList.add('active');
-
-        this.currentSection = sectionName;
-
-        // Update displays when switching sections
-        if (sectionName === 'inventory') {
-            this.updateInventoryDisplay();
-            this.updateStats();
-        } else if (sectionName === 'transfer') {
-            this.populateTransferItems();
-        }
-    }
-
-    async checkCameraPermission() {
-        try {
-            if (navigator.permissions) {
-                const permission = await navigator.permissions.query({ name: 'camera' });
-                return permission.state !== 'denied';
-            }
-            return true; // Assume allowed if permissions API not available
-        } catch (error) {
-            console.warn('Could not check camera permission:', error);
-            return true;
-        }
-    }
-
-    async startScanner() {
-        try {
-            console.log('Starting QR scanner...');
-            
-            // Check if Html5QrcodeScanner is available
-            if (typeof Html5QrcodeScanner === 'undefined') {
-                console.error('Html5QrcodeScanner is not loaded');
-                alert('QR Scanner library not loaded. Please refresh the page and try again.');
-                return;
-            }
-            
-            // Check camera permission first
-            const hasPermission = await this.checkCameraPermission();
-            if (!hasPermission) {
-                alert('Camera access is required for scanning. Please enable camera access in your browser settings.');
-                return;
-            }
-
-            // Clear any existing scanner
-            if (this.scanner) {
-                try {
-                    await this.scanner.clear();
-                } catch (error) {
-                    console.warn('Error clearing previous scanner:', error);
-                }
-                this.scanner = null;
-            }
-            // Ensure native scanner is stopped
-            await this.stopNativeScanner();
-
-            console.log('Initializing Html5QrcodeScanner...');
-            
-            // Check if required classes are available
-            if (typeof Html5QrcodeScanType === 'undefined') {
-                console.warn('Html5QrcodeScanType not available, using simple config');
-            }
-            if (typeof Html5QrcodeSupportedFormats === 'undefined') {
-                console.warn('Html5QrcodeSupportedFormats not available, using simple config');
-            }
-            
-            // Optimized configuration for Data Matrix and small QR codes
-            const config = {
-                fps: 15, // Higher fps for better Data Matrix detection
-                qrbox: { width: 350, height: 350 }, // Even larger detection box for small codes
-                aspectRatio: 1.0,
-                rememberLastUsedCamera: true,
-                showTorchButtonIfSupported: true,
-                showZoomSliderIfSupported: true,
-                verbose: true, // Enable verbose logging
-                disableFlip: false // Allow flipped detection
-            };
-            
-            // Add ALL supported scan types for maximum compatibility
-            if (typeof Html5QrcodeScanType !== 'undefined') {
-                config.supportedScanTypes = [Html5QrcodeScanType.SCAN_TYPE_CAMERA];
-            }
-            
-            // Prioritize Data Matrix and QR codes for medicine packaging
-            if (typeof Html5QrcodeSupportedFormats !== 'undefined') {
-                config.formatsToSupport = [
-                    Html5QrcodeSupportedFormats.DATA_MATRIX, // Your code format - prioritize this!
-                    Html5QrcodeSupportedFormats.QR_CODE,
-                    Html5QrcodeSupportedFormats.AZTEC,
-                    Html5QrcodeSupportedFormats.PDF_417,
-                    Html5QrcodeSupportedFormats.CODE_128,
-                    Html5QrcodeSupportedFormats.CODE_39,
-                    Html5QrcodeSupportedFormats.EAN_13,
-                    Html5QrcodeSupportedFormats.EAN_8,
-                    Html5QrcodeSupportedFormats.UPC_A,
-                    Html5QrcodeSupportedFormats.UPC_E,
-                    Html5QrcodeSupportedFormats.CODABAR,
-                    Html5QrcodeSupportedFormats.CODE_93,
-                    Html5QrcodeSupportedFormats.MAXICODE,
-                    Html5QrcodeSupportedFormats.ITF,
-                    Html5QrcodeSupportedFormats.RSS_14,
-                    Html5QrcodeSupportedFormats.RSS_EXPANDED,
-                    Html5QrcodeSupportedFormats.UPC_EAN_EXTENSION
-                ];
-                console.log('📱 Scanner configured for Data Matrix codes (like yours!)');
-            } else {
-                // Fallback: don't specify formats, let the library detect automatically
-                console.log('Using automatic format detection for Data Matrix and other codes');
-            }
-            
-            // Optimized video constraints for Data Matrix detection
-            config.videoConstraints = {
-                width: { min: 640, ideal: 1280, max: 1920 }, // Higher resolution crucial for small Data Matrix
-                height: { min: 480, ideal: 720, max: 1080 },
-                frameRate: { ideal: 15, max: 20 }, // Good framerate for Data Matrix
-                facingMode: { ideal: "environment" }, // Use back camera for scanning
-                // Advanced settings for better focus on small codes
-                focusMode: { ideal: "continuous" },
-                whiteBalanceMode: { ideal: "continuous" }
-            };
-            
-            // Enable experimental features for better Data Matrix detection
-            config.experimentalFeatures = {
-                useBarCodeDetectorIfSupported: true // Use native barcode detector if available
-            };
-            
-            console.log('Scanner config:', config);
-            this.scanner = new Html5QrcodeScanner("reader", config);
-
-            console.log('Rendering scanner...');
-            this.scanner.render(
-                // Success callback - this should fire when a QR code is detected
-                (decodedText, decodedResult) => {
-                    console.log('🎉🎉🎉 QR CODE SCAN SUCCESS! 🎉🎉🎉');
-                    console.log('Decoded text:', decodedText);
-                    console.log('Decoded result object:', decodedResult);
-                    console.log('Text length:', decodedText ? decodedText.length : 'undefined');
-                    console.log('Text type:', typeof decodedText);
-                    
-                    // IMPORTANT: Alert to make sure we see this in any case
-                    alert(`QR Code Scanned Successfully: ${decodedText}`);
-                    
-                    // Show immediate feedback
-                    this.showNotification(`✅ Scanned: ${decodedText}`, 'success');
-                    
-                    // Reset error counters
-                    this.multiFormatErrorCount = 0;
-
-                    // Handle the scan result
-                    this.handleScanResult(decodedText);
-                    
-                    // Stop scanner after successful scan
-                    setTimeout(() => {
-                        this.stopScanner();
-                    }, 2000); // Brief delay to show the success message
-                },
-                // Error callback - this fires continuously while scanning
-                (error) => {
-                    const errorString = error ? error.toString() : 'Unknown error';
-                    
-                    // Handle specific "No MultiFormat Readers" error
-                    if (errorString.includes('No MultiFormat Readers')) {
-                        console.log('📱 Scanner detected something but cannot decode format. Try:');
-                        console.log('- Better lighting');
-                        console.log('- Hold barcode steadier');
-                        console.log('- Different angle/distance');
-                        console.log('- Make sure barcode is not damaged');
-                        
-                        // Show user-friendly guidance (but not too frequently)
-                        if (!this.lastMultiFormatError || Date.now() - this.lastMultiFormatError > 2000) {
-                            this.showNotification('📱 Data Matrix detected! Get closer & hold steady.', 'warning');
-                            this.lastMultiFormatError = Date.now();
-                            
-                            // Show scanning tips
-                            const tipsElement = document.getElementById('scannerTips');
-                            if (tipsElement) {
-                                tipsElement.style.display = 'block';
-                                // Hide tips after 10 seconds for Data Matrix (needs more time)
-                                setTimeout(() => {
-                                    tipsElement.style.display = 'none';
-                                }, 10000);
-                            }
-                        }
-
-                        // Increment error counter and auto-fallback to native after threshold
-                        this.multiFormatErrorCount++;
-                        if (this.multiFormatErrorCount >= 12 && 'BarcodeDetector' in window) {
-                            this.showNotification('🔄 Switching to Native Scanner for Data Matrix…', 'info');
-                            // Avoid loop: stop this scanner and start native
-                            this.stopScanner().then(() => this.startNativeScanner());
-                        }
-                        return;
-                    }
-                    
-                    // Only log other errors that aren't just "no QR code found"
-                    if (!errorString.includes('NotFoundException') && 
-                        !errorString.includes('QR code not found') &&
-                        !errorString.includes('No code found') &&
-                        !errorString.includes('Code not found')) {
-                        console.warn('QR Scanner error:', error);
-                    }
-                }
-            );
-
-            console.log('Scanner rendered successfully');
-            
-            // Add manual focus functionality
-            setTimeout(() => {
-                const video = document.querySelector('#reader video');
-                if (video) {
-                    console.log('Video element found, adding click listener');
-                    video.addEventListener('click', () => {
-                        this.triggerManualFocus(video);
-                    });
-                    
-                    // Add visual indicator for tap-to-focus
-                    video.style.cursor = 'pointer';
-                    video.title = 'Tap to focus';
-                } else {
-                    console.warn('Video element not found in #reader');
-                }
-            }, 1000);
-
-            // Update UI
-            document.getElementById('startScan').classList.add('hidden');
-            document.getElementById('stopScan').classList.remove('hidden');
-            document.getElementById('manualFocusBtn').classList.remove('hidden');
-            document.getElementById('restartScannerBtn').classList.remove('hidden');
-            document.getElementById('scannerStatus').classList.remove('hidden');
-            
-            console.log('Scanner UI updated, scanner is ready');
-            
-            // Show helpful message
-            this.showNotification('🎯 Scanner ready! Point camera at QR code or barcode.', 'info');
-            
-        } catch (error) {
-            console.error('Scanner initialization error:', error);
-            
-            // More specific error messages
-            if (error.name === 'NotAllowedError') {
-                alert('Camera access denied. Please allow camera access and try again.');
-            } else if (error.name === 'NotFoundError') {
-                alert('No camera found. Please use manual entry.');
-            } else if (error.name === 'NotSupportedError') {
-                alert('Camera not supported on this device. Please use manual entry.');
-            } else {
-                alert('Camera error: ' + error.message + '. Please use manual entry.');
-            }
-            
-            // Reset buttons
-            document.getElementById('startScan').classList.remove('hidden');
-            document.getElementById('stopScan').classList.add('hidden');
-        }
-    }
-
-    async triggerManualFocus(video) {
-        // For older webcams like A4Tech, manual focus often doesn't work
-        // Instead, provide helpful guidance
-        this.showNotification('For A4Tech webcams: Move barcode slowly closer/farther until clear', 'info');
-        
-        // Try basic constraint reset which sometimes helps
-        try {
-            const video = document.querySelector('#reader video');
-            if (video && video.srcObject) {
-                const stream = video.srcObject;
-                const track = stream.getVideoTracks()[0];
-                
-                // Reset basic constraints
-                await track.applyConstraints({
-                    width: 640,
-                    height: 480,
-                    frameRate: 15
-                });
-                
-                console.log('Camera constraints reset');
-            }
-        } catch (error) {
-            console.warn('Could not reset camera constraints:', error);
-        }
-    }
-
-    async restartScanner() {
-        this.showNotification('Restarting camera...', 'info');
-        this.scannerRetryCount = 0; // Reset retry count
-        await this.stopScanner();
-        
-        // Wait a moment before restarting
-        setTimeout(() => {
-            this.startScanner();
-        }, 1000);
-    }
-
-    // Test function to simulate a successful scan
-    testScanResult() {
-        console.log('🧪 Testing scan result processing...');
-        const testBarcode = '1234567890123'; // Test EAN-13 barcode
-        this.showNotification('🧪 Testing with sample barcode...', 'info');
-        
-        // Simulate the scan success callback
-        setTimeout(() => {
-            console.log('🎉🎉🎉 TEST QR CODE SCAN SUCCESS! 🎉🎉🎉');
-            console.log('Test decoded text:', testBarcode);
-            
-            // Show alert like real scan
-            alert(`Test QR Code Scanned Successfully: ${testBarcode}`);
-            
-            // Process like real scan
-            this.handleScanResult(testBarcode);
-        }, 500);
-    }
-
-    // Test function to simulate a successful QR scan
-    testScanResult() {
-        console.log('🧪 Testing QR scan result processing...');
-        const testBarcode = '1234567890123';
-        console.log('Simulating scan of test barcode:', testBarcode);
-        
-        // Simulate the exact same flow as a real scan
-        this.showNotification(`🧪 Test scan: ${testBarcode}`, 'info');
-        this.handleScanResult(testBarcode);
-    }
-
-    async stopScanner() {
-        // Stop html5-qrcode scanner
-        if (this.scanner) {
-            try {
-                await this.scanner.clear();
-                console.log('Scanner cleared successfully');
-            } catch (error) {
-                console.warn('Error clearing scanner:', error);
-            }
-            this.scanner = null;
-        }
-        // Stop native scanner if running
-        await this.stopNativeScanner();
-        document.getElementById('startScan').classList.remove('hidden');
-        document.getElementById('stopScan').classList.add('hidden');
-        document.getElementById('manualFocusBtn').classList.add('hidden');
-        document.getElementById('restartScannerBtn').classList.add('hidden');
-        document.getElementById('scannerStatus').classList.add('hidden');
-    }
-
-    // -------------------------
-    // Native BarcodeDetector fallback (great for Data Matrix)
-    // -------------------------
-    async startNativeScanner() {
-        try {
-            if (!('BarcodeDetector' in window)) {
-                this.showNotification('BarcodeDetector not supported in this browser.', 'error');
-                return;
-            }
-
-            // Stop other scanners first
-            if (this.scanner) {
-                try { await this.scanner.clear(); } catch {}
-                this.scanner = null;
-            }
-            await this.stopNativeScanner();
-
-            // Setup UI container
-            const reader = document.getElementById('reader');
-            reader.innerHTML = '';
-
-            // Create video element
-            const video = document.createElement('video');
-            video.setAttribute('autoplay', '');
-            video.setAttribute('muted', '');
-            video.setAttribute('playsinline', '');
-            video.style.width = '100%';
-            video.style.maxWidth = '480px';
-            video.style.borderRadius = '8px';
-            reader.appendChild(video);
-            this.nativeVideo = video;
-
-            // Start camera
-            const constraints = {
-                video: {
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                    frameRate: { ideal: 15, max: 20 },
-                    facingMode: { ideal: 'environment' }
-                },
-                audio: false
-            };
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
-            this.nativeStream = stream;
-            video.srcObject = stream;
-            await new Promise((res) => video.onloadedmetadata = () => res());
-            await video.play();
-
-            // Init detector prioritizing Data Matrix
-            const supported = (await window.BarcodeDetector.getSupportedFormats?.()) || [];
-            console.log('Native BarcodeDetector supported formats:', supported);
-            const wanted = ['data_matrix', 'qr_code', 'code_128', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_39'];
-            const formats = supported.length ? wanted.filter(f => supported.includes(f)) : wanted;
-            this.nativeDetector = new window.BarcodeDetector({ formats });
-            this.showNotification('🎯 Native scanner started (optimized for Data Matrix)…', 'info');
-
-            // UI buttons
-            document.getElementById('startScan').classList.add('hidden');
-            document.getElementById('stopScan').classList.remove('hidden');
-            document.getElementById('manualFocusBtn').classList.remove('hidden');
-            document.getElementById('restartScannerBtn').classList.remove('hidden');
-            document.getElementById('scannerStatus').classList.remove('hidden');
-
-            // Scan loop
-            const scan = async () => {
-                try {
-                    const barcodes = await this.nativeDetector.detect(video);
-                    if (barcodes && barcodes.length) {
-                        const best = barcodes[0];
-                        const value = best.rawValue || '';
-                        console.log('Native detected:', best.format, value);
-                        alert(`Detected (${best.format}): ${value}`);
-                        this.showNotification(`✅ ${best.format.toUpperCase()} scanned`, 'success');
-                        this.handleScanResult(value);
-                        await this.stopScanner();
-                        return;
-                    }
-                } catch (err) {
-                    // Ignore transient detection errors
-                }
-                this.nativeScanRAF = requestAnimationFrame(scan);
-            };
-            this.nativeScanRAF = requestAnimationFrame(scan);
-        } catch (error) {
-            console.error('Native scanner error:', error);
-            this.showNotification('Native scanner failed. Falling back to standard scanner.', 'error');
-            // Try html5 scanner as fallback
-            await this.startScanner();
-        }
-    }
-
-    async stopNativeScanner() {
-        if (this.nativeScanRAF) {
-            cancelAnimationFrame(this.nativeScanRAF);
-            this.nativeScanRAF = null;
-        }
-        if (this.nativeVideo) {
-            try { this.nativeVideo.pause(); } catch {}
-            this.nativeVideo.srcObject = null;
-            this.nativeVideo = null;
-        }
-        if (this.nativeStream) {
-            try {
-                this.nativeStream.getTracks().forEach(t => t.stop());
-            } catch {}
-            this.nativeStream = null;
-        }
-        this.nativeDetector = null;
-    }
-
-    handleScanResult(decodedText) {
-        console.log('🔄 Processing scan result:', decodedText);
-        console.log('Raw scan data type:', typeof decodedText);
-        console.log('Raw scan data length:', decodedText ? decodedText.length : 'null/undefined');
-        
-        // Clean the scanned text (remove any whitespace)
-        const cleanedText = decodedText ? decodedText.trim() : '';
-        
-        if (!cleanedText) {
-            console.error('❌ Empty or invalid scan result');
-            this.showNotification('❌ Empty scan result. Please try again.', 'error');
-            return;
-        }
-        
-        // Try to parse GS1 Data Matrix with AIs like (01)(21)
-        const gs1 = this.parseGs1(cleanedText);
-        let displayCode = cleanedText;
-        if (gs1 && (gs1.gtin || gs1.serial)) {
-            displayCode = gs1.gtin ? (gs1.serial ? `${gs1.gtin}-${gs1.serial}` : gs1.gtin) : cleanedText;
-            console.log('Parsed GS1:', gs1);
-        }
-        
-        try {
-            // Pre-fill the manual entry form with scanned data (prefer GTIN-serial)
-            const medicineCodeInput = document.getElementById('medicineCode');
-            if (medicineCodeInput) {
-                medicineCodeInput.value = displayCode;
-                medicineCodeInput.dispatchEvent(new Event('input', { bubbles: true }));
-                console.log('Medicine code field updated with:', displayCode);
-            } else {
-                console.error('Medicine code input field not found');
-            }
-            
-            // Show success notification with the parsed data
-            if (gs1 && (gs1.gtin || gs1.serial)) {
-                const parts = [`GTIN: ${gs1.gtin || 'n/a'}`];
-                if (gs1.serial) parts.push(`Serial: ${gs1.serial}`);
-                this.showNotification(`📦 GS1 scanned • ${parts.join(' • ')}`, 'success');
-            } else {
-                this.showNotification(`📱 Code scanned: ${cleanedText}`, 'success');
-            }
-            
-            // Try to fetch medicine info from barcode
-            this.fetchMedicineInfo(displayCode);
-            
-            // Scroll to manual entry form and focus on medicine name field
-            const manualEntry = document.querySelector('.manual-entry');
-            if (manualEntry) {
-                manualEntry.scrollIntoView({ behavior: 'smooth' });
-                
-                // Focus on medicine name field after a short delay
-                setTimeout(() => {
-                    const medicineNameInput = document.getElementById('medicineName');
-                    if (medicineNameInput) {
-                        medicineNameInput.focus();
-                    }
-                }, 500);
-            }
-            
-        } catch (error) {
-            console.error('Error handling scan result:', error);
-            this.showNotification('❌ Error processing scan result. Please try manual entry.', 'error');
-        }
-    }
+    // Scanner-related functions removed
 
     // Parse common GS1 Data (supports (01)GTIN and (21)Serial; also FNC1-separated)
     parseGs1(text) {
@@ -803,9 +218,8 @@ class MedicineInventory {
         const medicineData = {
             code: formData.get('medicineCode') || document.getElementById('medicineCode').value,
             name: formData.get('medicineName') || document.getElementById('medicineName').value,
-            manufacturer: formData.get('manufacturer') || document.getElementById('manufacturer').value,
             quantity: parseInt(formData.get('quantity') || document.getElementById('quantity').value),
-            expirationDate: formData.get('expirationDate') || document.getElementById('expirationDate').value,
+            expirationDate: (formData.get('expirationDate') || document.getElementById('expirationDate').value || '').trim() || null,
             location: formData.get('location') || document.getElementById('location').value
         };
 
@@ -831,7 +245,7 @@ class MedicineInventory {
             const existingIndex = this.inventory.findIndex(item => 
                 item.code === medicine.code && 
                 item.location === medicine.location &&
-                item.expirationDate === medicine.expirationDate
+                (item.expirationDate || null) === (medicine.expirationDate || null)
             );
 
             if (existingIndex !== -1) {
@@ -853,7 +267,7 @@ class MedicineInventory {
 
     updateInventoryDisplay() {
         const locationFilter = document.getElementById('locationFilter').value;
-        const searchTerm = document.getElementById('searchBox').value.toLowerCase();
+    const searchTerm = document.getElementById('searchBox').value.toLowerCase();
         
         let filteredInventory = this.inventory;
         
@@ -864,7 +278,6 @@ class MedicineInventory {
         if (searchTerm) {
             filteredInventory = filteredInventory.filter(item =>
                 item.name.toLowerCase().includes(searchTerm) ||
-                item.manufacturer.toLowerCase().includes(searchTerm) ||
                 item.code.toLowerCase().includes(searchTerm)
             );
         }
@@ -887,7 +300,7 @@ class MedicineInventory {
         const div = document.createElement('div');
         div.className = 'inventory-item';
         
-        const daysUntilExpiration = this.getDaysUntilExpiration(item.expirationDate);
+    const daysUntilExpiration = item.expirationDate ? this.getDaysUntilExpiration(item.expirationDate) : Infinity;
         
         if (daysUntilExpiration < 0) {
             div.classList.add('expired');
@@ -899,8 +312,7 @@ class MedicineInventory {
             <div class="item-info">
                 <h4>${item.name}</h4>
                 <p><strong>Code:</strong> ${item.code}</p>
-                <p><strong>Manufacturer:</strong> ${item.manufacturer || 'Unknown'}</p>
-                <p><strong>Expires:</strong> ${this.formatDate(item.expirationDate)} ${this.getExpirationStatus(daysUntilExpiration)}</p>
+                ${item.expirationDate ? `<p><strong>Expires:</strong> ${this.formatDate(item.expirationDate)} ${this.getExpirationStatus(daysUntilExpiration)}</p>` : ''}
             </div>
             <div class="item-location">${this.getLocationDisplayName(item.location)}</div>
             <div class="item-quantity">${item.quantity}</div>
@@ -913,7 +325,7 @@ class MedicineInventory {
 
     getDaysUntilExpiration(expirationDate) {
         const today = new Date();
-        const expDate = new Date(expirationDate);
+    const expDate = new Date(expirationDate);
         const diffTime = expDate - today;
         return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     }
@@ -930,13 +342,13 @@ class MedicineInventory {
     updateStats() {
         const total = this.inventory.reduce((sum, item) => sum + item.quantity, 0);
         const expiringSoon = this.inventory.filter(item => {
+            if (!item.expirationDate) return false;
             const days = this.getDaysUntilExpiration(item.expirationDate);
             return days > 0 && days <= this.settings.expirationAlert;
         }).reduce((sum, item) => sum + item.quantity, 0);
         
-        const expired = this.inventory.filter(item => {
-            return this.getDaysUntilExpiration(item.expirationDate) < 0;
-        }).reduce((sum, item) => sum + item.quantity, 0);
+        const expired = this.inventory.filter(item => item.expirationDate && this.getDaysUntilExpiration(item.expirationDate) < 0)
+            .reduce((sum, item) => sum + item.quantity, 0);
 
         document.getElementById('totalItems').textContent = total;
         document.getElementById('expiringSoon').textContent = expiringSoon;
@@ -1151,10 +563,9 @@ class MedicineInventory {
         details.innerHTML = `
             <h3>${item.name}</h3>
             <p><strong>Code:</strong> ${item.code}</p>
-            <p><strong>Manufacturer:</strong> ${item.manufacturer || 'Unknown'}</p>
             <p><strong>Quantity:</strong> ${item.quantity}</p>
             <p><strong>Location:</strong> ${this.getLocationDisplayName(item.location)}</p>
-            <p><strong>Expiration Date:</strong> ${this.formatDate(item.expirationDate)} ${this.getExpirationStatus(daysUntilExpiration)}</p>
+            ${item.expirationDate ? `<p><strong>Expiration Date:</strong> ${this.formatDate(item.expirationDate)} ${this.getExpirationStatus(daysUntilExpiration)}</p>` : ''}
             <p><strong>Added:</strong> ${this.formatDate(item.addedDate)}</p>
         `;
         
@@ -1179,13 +590,12 @@ class MedicineInventory {
         const item = this.inventory.find(item => item.id === itemId);
         if (!item) return;
 
-        // Switch to scanner section and populate form
-        this.showSection('scanner');
+    // Stay on inventory section and populate form
+    this.showSection('inventory');
         
         // Populate the manual entry form with current item data
         document.getElementById('medicineCode').value = item.code;
         document.getElementById('medicineName').value = item.name;
-        document.getElementById('manufacturer').value = item.manufacturer || '';
         document.getElementById('quantity').value = item.quantity;
         document.getElementById('expirationDate').value = item.expirationDate;
         document.getElementById('location').value = item.location;

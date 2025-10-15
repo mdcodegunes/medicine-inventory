@@ -6,89 +6,18 @@
     <title>Medicine Inventory Manager</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="manifest" href="manifest.json">
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
 <body>
     <div class="container">
         <header>
             <h1>🏥 Medicine Inventory Manager</h1>
             <nav>
-                <button id="scanBtn" class="nav-btn">📱 Scan Item</button>
                 <button id="inventoryBtn" class="nav-btn active">📋 Inventory</button>
                 <button id="transferBtn" class="nav-btn">🔄 Transfer</button>
                 <button id="settingsBtn" class="nav-btn">⚙️ Settings</button>
             </nav>
         </header>
-
-        <!-- Scanner Section -->
-        <section id="scannerSection" class="section hidden">
-            <h2>Scan Medicine Barcode/QR Code</h2>
-            <div class="scanner-instructions">
-                <p>📱 <strong>Instructions:</strong> Point your camera at the medicine package barcode or QR code.</p>
-                <p>💡 <strong>Tips for older webcams (like A4Tech PK-910H):</strong></p>
-                <ul>
-                    <li>🔆 Use VERY bright lighting - desk lamp recommended</li>
-                    <li>📏 Hold barcode 8-15 inches away (farther than phones)</li>
-                    <li>⏳ Wait 3-5 seconds for camera to adjust</li>
-                    <li>📱 If blurry, slowly move closer/farther until clear</li>
-                    <li>🔄 Try rotating the barcode 90 degrees</li>
-                    <li>📦 Use larger barcodes if possible</li>
-                    <li>⚡ Close other apps using camera to improve performance</li>
-                    <li>🎯 <strong>If "No MultiFormat Readers" error:</strong> Hold barcode VERY steady, ensure good contrast</li>
-                    <li>🔄 Try different angles - sometimes 45° works better than straight on</li>
-                </ul>
-                <p>🔍 <strong>Supported formats:</strong> Data Matrix (like yours!), QR codes, UPC, EAN, Code 128, and more</p>
-                <p>📱 <strong>For Data Matrix codes (small square patterns):</strong></p>
-                <ul style="margin-top: 5px; font-size: 0.9em;">
-                    <li>🔍 Get VERY close (3-6 inches) - these codes are small!</li>
-                    <li>💡 Use maximum brightness/lighting</li>
-                    <li>🎯 Center the code exactly in the scanning box</li>
-                    <li>⚡ Hold extremely steady - any movement blurs small codes</li>
-                    <li>🔄 Try slightly different angles if not working</li>
-                </ul>
-            </div>
-            <div id="reader" class="scanner-container"></div>
-            <div class="scanner-controls">
-                <button id="startScan">📷 Start Scanner</button>
-                <button id="stopScan" class="hidden">⏹️ Stop Scanner</button>
-                <button id="manualFocusBtn" class="hidden" onclick="medicineApp.triggerManualFocus()">🎯 Focus</button>
-                <button id="restartScannerBtn" class="hidden" onclick="medicineApp.restartScanner()">🔄 Restart Camera</button>
-                <button id="nativeScanBtn" class="hidden" title="Uses browser's built‑in barcode detector if available">🧪 Native Scanner (Beta)</button>
-                <button id="testScanBtn" style="background-color: #ff6b35; margin-top: 10px;" onclick="medicineApp.testScanResult()">🧪 Test Scan (Debug)</button>
-            </div>
-            <div id="scannerStatus" class="scanner-status hidden">
-                <p id="statusText">Ready to scan</p>
-                <div id="scannerTips" class="scanner-tips" style="display: none; margin-top: 10px; padding: 10px; background-color: #fff3cd; border-radius: 5px; font-size: 0.9em;">
-                    <strong>💡 Data Matrix Scanning Tips:</strong><br>
-                    • Get MUCH closer (3-6 inches) for small codes<br>
-                    • Use maximum lighting - Data Matrix needs bright light<br>
-                    • Center the square pattern exactly in the scan box<br>
-                    • Hold extremely steady - small codes are sensitive to movement<br>
-                    • Try 90° rotation if horizontal doesn't work<br>
-                    • Make sure the code isn't wrinkled or damaged
-                </div>
-            </div>
-            
-            <!-- Manual Entry Form -->
-            <div class="manual-entry">
-                <h3>Or Add Manually</h3>
-                <form id="manualEntryForm">
-                    <input type="text" id="medicineCode" placeholder="Medicine Code/Barcode" required>
-                    <input type="text" id="medicineName" placeholder="Medicine Name" required>
-                    <input type="text" id="manufacturer" placeholder="Manufacturer">
-                    <input type="number" id="quantity" placeholder="Quantity" min="1" required>
-                    <input type="date" id="expirationDate" required>
-                    <select id="location" required>
-                        <option value="">Select Location</option>
-                        <option value="store">Store</option>
-                        <option value="car1">Car 1</option>
-                        <option value="car2">Car 2</option>
-                        <option value="home">Home</option>
-                    </select>
-                    <button type="submit">Add to Inventory</button>
-                </form>
-            </div>
-        </section>
+        
 
         <!-- Inventory Section -->
         <section id="inventorySection" class="section">
@@ -105,6 +34,25 @@
                     <input type="text" id="searchBox" placeholder="Search medicines...">
                     <button id="exportBtn">📤 Export</button>
                 </div>
+            </div>
+
+            <!-- Manual Entry Form (no manufacturer, optional date) -->
+            <div class="manual-entry">
+                <h3>Add Medicine</h3>
+                <form id="manualEntryForm">
+                    <input type="text" id="medicineCode" placeholder="Medicine Code/Barcode" required>
+                    <input type="text" id="medicineName" placeholder="Medicine Name" required>
+                    <input type="number" id="quantity" placeholder="Quantity" min="1" required>
+                    <input type="date" id="expirationDate" placeholder="Expiration Date (optional)">
+                    <select id="location" required>
+                        <option value="">Select Location</option>
+                        <option value="store">Store</option>
+                        <option value="car1">Car 1</option>
+                        <option value="car2">Car 2</option>
+                        <option value="home">Home</option>
+                    </select>
+                    <button type="submit">Add to Inventory</button>
+                </form>
             </div>
             
             <div class="stats-cards">
@@ -230,7 +178,7 @@
                 <a href="https://github.com/mdcodegunes/medicine-inventory" target="_blank" rel="noopener">📂 View on GitHub</a>
                 <span>📱 Install as PWA for best experience</span>
             </div>
-            <p><small>☁️ Cloud Sync saves changes automatically when enabled (Settings → Cloud Sync)</small></p>
+            <p><small>☁️ Cloud Sync saves changes automatically</small></p>
         </div>
     </footer>
 
