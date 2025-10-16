@@ -43,11 +43,11 @@
                 <h3>İlaç Ekle</h3>
                 <div id="manualFormFeedback" class="form-feedback hidden"></div>
                 <form id="manualEntryForm">
-                    <input type="text" id="medicineName" placeholder="İlaç Adı" list="medicineNameSuggestions" required>
+                    <input type="text" id="medicineName" name="medicineName" placeholder="İlaç Adı" list="medicineNameSuggestions" required>
                     <datalist id="medicineNameSuggestions"></datalist>
-                    <input type="number" id="quantity" placeholder="Adet" min="1" required>
-                    <input type="date" id="expirationDate" placeholder="Son Kullanma Tarihi (opsiyonel)">
-                    <select id="location" required>
+                    <input type="number" id="quantity" name="quantity" placeholder="Adet" min="1" required>
+                    <input type="date" id="expirationDate" name="expirationDate" placeholder="Son Kullanma Tarihi (opsiyonel)">
+                    <select id="location" name="location" required>
                         <option value="">Konum Seçin</option>
                         <option value="oda">Oda</option>
                         <option value="arac">Araç</option>
