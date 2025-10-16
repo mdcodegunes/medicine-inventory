@@ -41,8 +41,8 @@
             <!-- Manual Entry Form (no manufacturer, optional date) -->
             <div class="manual-entry">
                 <h3>İlaç Ekle</h3>
+                <div id="manualFormFeedback" class="form-feedback hidden"></div>
                 <form id="manualEntryForm">
-                    <input type="text" id="medicineCode" placeholder="İlaç Kodu/Barkodu" required>
                     <input type="text" id="medicineName" placeholder="İlaç Adı" list="medicineNameSuggestions" required>
                     <datalist id="medicineNameSuggestions"></datalist>
                     <input type="number" id="quantity" placeholder="Adet" min="1" required>
@@ -82,6 +82,9 @@
         <section id="transferSection" class="section hidden">
             <h2>İlaç Transferi</h2>
             <form id="transferForm">
+                <div class="transfer-search">
+                    <input type="text" id="transferSearch" placeholder="İlaç ara veya filtrele">
+                </div>
                 <select id="transferItem" required>
                     <option value="">Taşınacak ilacı seçin</option>
                 </select>
@@ -100,6 +103,7 @@
                     </div>
                 </div>
                 <input type="number" id="transferQuantity" placeholder="Aktarılacak adet" min="1" required>
+                <div id="transferPreview" class="transfer-preview hidden"></div>
                 <button type="submit">Transfer Et</button>
             </form>
 
@@ -143,6 +147,18 @@
                 <button id="importBtn">📥 Verileri İçe Aktar</button>
                 <button id="clearDataBtn" class="danger">🗑️ Tüm Verileri Sil</button>
                 <input type="file" id="importFile" accept=".json" style="display: none;">
+            </div>
+
+            <div class="settings-group">
+                <h3>İlaç Kataloğu</h3>
+                <p class="settings-hint">Sık kullanılan ilaçları düzenleyin veya yenilerini ekleyin.</p>
+                <div class="catalog-controls">
+                    <input type="text" id="newCatalogEntry" placeholder="Kataloğa yeni ilaç ekle">
+                    <button id="addCatalogEntryBtn" type="button">Ekle</button>
+                </div>
+                <div id="catalogList" class="catalog-list">
+                    <!-- Catalog entries listed here -->
+                </div>
             </div>
 
             <!-- Auto Backup (Local Folder) removed: Cloud Sync saves changes automatically when enabled. -->

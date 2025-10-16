@@ -40,6 +40,8 @@ class MedicineInventory {
         ];
         const storedCatalog = JSON.parse(localStorage.getItem('medicineCatalog')) || [];
         this.medicineCatalog = this.buildMedicineCatalog(storedCatalog);
+        const storedUsage = JSON.parse(localStorage.getItem('medicineCatalogUsage')) || {};
+        this.catalogUsage = this.normalizeCatalogUsage(storedUsage);
 
         this.locationAliases = {
             'store': 'oda',
@@ -50,6 +52,7 @@ class MedicineInventory {
         this.normalizeLocalData();
         this.refreshCatalogFromInventory();
         this.persistMedicineCatalog();
+        this.persistCatalogUsage();
 
         // Optional: embed default Firebase Cloud Sync here so the app connects without manual input
         // Replace the firebaseConfig object below with your own, or comment this block to disable auto-embed.
@@ -95,14 +98,26 @@ class MedicineInventory {
             saveTimer: null,
             clientId: Math.random().toString(36).slice(2),
             lastRemoteUpdate: null,
-            status: 'init'
+            status: 'init',
+            statusType: 'info'
         };
+        this.cloudStatusMeta = { text: 'pasif', type: 'info' };
         // Concurrency flags
         this.applyingRemote = false;
         this.pendingLocalChange = false;
-    this.pendingDeletions = new Set();
+        this.pendingDeletions = new Set();
         // Ensure debouncedCloudSave is a no-op before Cloud Sync initializes
         this.debouncedCloudSave = () => {};
+        this.localChangeTracker = new Map();
+        this.lastSyncStatus = {
+            lastPush: null,
+            lastPull: null,
+            lastError: null,
+            lastConflict: null
+        };
+        this.transferFilter = '';
+        this.manualFormFeedbackTimer = null;
+        this.lastConflictNotifiedAt = 0;
         
         this.init();
     // Backup reminders removed; Cloud Sync handles autosave when enabled
@@ -138,6 +153,7 @@ class MedicineInventory {
         this.displayLocations();
         this.updateDataStatus();
         this.populateMedicineSuggestions();
+        this.renderCatalogList();
         // Auto-backup removed
     }
 
@@ -162,7 +178,10 @@ class MedicineInventory {
 
         // Manual entry
         const manualForm = document.getElementById('manualEntryForm');
-        if (manualForm) manualForm.addEventListener('submit', (e) => this.handleManualEntry(e));
+        if (manualForm) {
+            manualForm.addEventListener('submit', (e) => this.handleManualEntry(e));
+            manualForm.addEventListener('input', () => this.clearManualFormFeedback());
+        }
 
         // Inventory filters
         const locFilter = document.getElementById('locationFilter');
@@ -175,6 +194,16 @@ class MedicineInventory {
     // Transfer formu
     const transferForm = document.getElementById('transferForm');
     if (transferForm) transferForm.addEventListener('submit', (e) => this.handleTransfer(e));
+        const transferSearch = document.getElementById('transferSearch');
+        if (transferSearch) transferSearch.addEventListener('input', (e) => this.setTransferFilter(e.target.value));
+        const transferSelect = document.getElementById('transferItem');
+        if (transferSelect) transferSelect.addEventListener('change', () => this.updateTransferPreview());
+        const fromLocationSelect = document.getElementById('fromLocation');
+        if (fromLocationSelect) fromLocationSelect.addEventListener('change', () => this.updateTransferPreview());
+        const toLocationSelect = document.getElementById('toLocation');
+        if (toLocationSelect) toLocationSelect.addEventListener('change', () => this.updateTransferPreview());
+        const transferQuantityInput = document.getElementById('transferQuantity');
+        if (transferQuantityInput) transferQuantityInput.addEventListener('input', () => this.updateTransferPreview());
 
         // Settings
         const addLocBtn = document.getElementById('addLocationBtn');
@@ -187,6 +216,22 @@ class MedicineInventory {
         if (clearBtn) clearBtn.addEventListener('click', () => this.clearAllData());
         const expAlert = document.getElementById('expirationAlert');
         if (expAlert) expAlert.addEventListener('change', (e) => this.updateSettings(e));
+        const catalogAddBtn = document.getElementById('addCatalogEntryBtn');
+        if (catalogAddBtn) catalogAddBtn.addEventListener('click', () => this.handleCatalogAdd());
+        const catalogInput = document.getElementById('newCatalogEntry');
+        if (catalogInput) catalogInput.addEventListener('keydown', (evt) => {
+            if (evt.key === 'Enter') {
+                evt.preventDefault();
+                this.handleCatalogAdd();
+            }
+        });
+        const catalogList = document.getElementById('catalogList');
+        if (catalogList) catalogList.addEventListener('click', (evt) => {
+            const button = evt.target.closest('.remove-catalog-entry');
+            if (button && button.dataset.name) {
+                this.removeCatalogEntry(button.dataset.name);
+            }
+        });
 
         // Details panel buttons
         const closeDetailsBtn = document.getElementById('closeDetailsBtn');
@@ -217,6 +262,8 @@ class MedicineInventory {
     refreshCatalogFromInventory() {
         const inventoryNames = (this.inventory || []).map(item => (item?.name || '').trim()).filter(Boolean);
         this.medicineCatalog = this.buildMedicineCatalog([...(this.medicineCatalog || []), ...inventoryNames]);
+        this.renderCatalogList();
+        this.populateMedicineSuggestions();
     }
 
     persistMedicineCatalog() {
@@ -225,11 +272,133 @@ class MedicineInventory {
         } catch {}
     }
 
+    persistCatalogUsage() {
+        try {
+            localStorage.setItem('medicineCatalogUsage', JSON.stringify(this.catalogUsage || {}));
+        } catch {}
+    }
+
+    normalizeCatalogUsage(raw = {}) {
+        const normalized = {};
+        Object.entries(raw || {}).forEach(([key, value]) => {
+            if (!key) return;
+            const lower = key.toLowerCase();
+            const record = {
+                name: (value && value.name) ? value.name : key,
+                count: Number.isFinite(Number(value?.count)) ? Number(value.count) : 0,
+                lastUsed: value?.lastUsed || null
+            };
+            normalized[lower] = record;
+        });
+        return normalized;
+    }
+
+    mergeCatalogUsage(remote = {}, local = {}) {
+        const remoteNorm = this.normalizeCatalogUsage(remote);
+        const localNorm = this.normalizeCatalogUsage(local);
+        const merged = { ...localNorm };
+        Object.entries(remoteNorm).forEach(([key, remoteEntry]) => {
+            const existing = merged[key];
+            if (!existing) {
+                merged[key] = { ...remoteEntry };
+                return;
+            }
+            const result = { ...existing };
+            const remoteCount = Number.isFinite(remoteEntry.count) ? remoteEntry.count : 0;
+            const localCount = Number.isFinite(existing.count) ? existing.count : 0;
+            if (remoteCount > localCount) {
+                result.count = remoteCount;
+            }
+            const remoteDate = remoteEntry.lastUsed ? new Date(remoteEntry.lastUsed).getTime() : 0;
+            const localDate = existing.lastUsed ? new Date(existing.lastUsed).getTime() : 0;
+            if (remoteDate > localDate) {
+                result.lastUsed = remoteEntry.lastUsed;
+                if (remoteEntry.name) result.name = remoteEntry.name;
+            }
+            merged[key] = result;
+        });
+        return merged;
+    }
+
+    touchCatalogEntry(name) {
+        const trimmed = (name || '').trim();
+        if (!trimmed) return;
+        if (!this.catalogUsage) this.catalogUsage = {};
+        const key = trimmed.toLowerCase();
+        const now = new Date().toISOString();
+        const existing = this.catalogUsage[key] || { name: trimmed, count: 0, lastUsed: null };
+        existing.name = trimmed;
+        existing.count = (existing.count || 0) + 1;
+        existing.lastUsed = now;
+        this.catalogUsage[key] = existing;
+        this.persistCatalogUsage();
+    }
+
+    getSortedCatalog() {
+        const list = [...(this.medicineCatalog || [])];
+        const usageMap = this.catalogUsage || {};
+        return list.sort((a, b) => {
+            const ua = usageMap[a.toLowerCase()] || {};
+            const ub = usageMap[b.toLowerCase()] || {};
+            const timeA = ua.lastUsed ? new Date(ua.lastUsed).getTime() : 0;
+            const timeB = ub.lastUsed ? new Date(ub.lastUsed).getTime() : 0;
+            if (timeA !== timeB) return timeB - timeA;
+            const countA = ua.count || 0;
+            const countB = ub.count || 0;
+            if (countA !== countB) return countB - countA;
+            return a.localeCompare(b, 'tr', { sensitivity: 'base' });
+        });
+    }
+
+    renderCatalogList() {
+        const listEl = document.getElementById('catalogList');
+        if (!listEl) return;
+        listEl.innerHTML = '';
+        const catalog = this.getSortedCatalog();
+        if (!catalog.length) {
+            listEl.innerHTML = '<p class="catalog-empty">Katalogta listelenen ilaç yok.</p>';
+            return;
+        }
+        catalog.forEach((name) => {
+            const usage = this.catalogUsage[name.toLowerCase()] || {};
+            const metaParts = [];
+            if (usage.count) metaParts.push(`kullanım: ${usage.count}`);
+            if (usage.lastUsed) metaParts.push(`son: ${this.formatRelativeTime(usage.lastUsed)}`);
+            const metaText = metaParts.length ? metaParts.join(' • ') : 'henüz kullanılmadı';
+
+            const item = document.createElement('div');
+            item.className = 'catalog-item';
+
+            const textWrap = document.createElement('div');
+            textWrap.className = 'catalog-text';
+
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = name;
+
+            const metaSpan = document.createElement('span');
+            metaSpan.className = 'catalog-meta';
+            metaSpan.textContent = metaText;
+
+            textWrap.appendChild(nameSpan);
+            textWrap.appendChild(metaSpan);
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'remove-catalog-entry';
+            removeBtn.dataset.name = name;
+            removeBtn.textContent = 'Sil';
+
+            item.appendChild(textWrap);
+            item.appendChild(removeBtn);
+            listEl.appendChild(item);
+        });
+    }
+
     populateMedicineSuggestions() {
         const datalist = document.getElementById('medicineNameSuggestions');
         if (!datalist) return;
         datalist.innerHTML = '';
-        (this.medicineCatalog || []).forEach((name) => {
+        this.getSortedCatalog().forEach((name) => {
             const option = document.createElement('option');
             option.value = name;
             datalist.appendChild(option);
@@ -240,10 +409,158 @@ class MedicineInventory {
         const trimmed = (name || '').trim();
         if (!trimmed) return;
         const exists = (this.medicineCatalog || []).some(item => item.toLowerCase() === trimmed.toLowerCase());
-        if (exists) return;
-        this.medicineCatalog = this.buildMedicineCatalog([...(this.medicineCatalog || []), trimmed]);
-        this.persistMedicineCatalog();
+        this.touchCatalogEntry(trimmed);
+        if (!exists) {
+            this.medicineCatalog = this.buildMedicineCatalog([...(this.medicineCatalog || []), trimmed]);
+            this.persistMedicineCatalog();
+        } else {
+            this.persistCatalogUsage();
+        }
         this.populateMedicineSuggestions();
+        this.renderCatalogList();
+    }
+
+    handleCatalogAdd() {
+        const input = document.getElementById('newCatalogEntry');
+        if (!input) return;
+        const value = (input.value || '').trim();
+        if (!value) {
+            this.showNotification('Lütfen kataloğa eklemek için bir ilaç adı girin.', 'error');
+            return;
+        }
+        const already = (this.medicineCatalog || []).some(item => item.toLowerCase() === value.toLowerCase());
+        this.ensureMedicineInCatalog(value);
+        input.value = '';
+        this.showNotification(already ? `${value} kataloğu güncellendi` : `${value} kataloğa eklendi`, 'success');
+    }
+
+    removeCatalogEntry(name) {
+        const trimmed = (name || '').trim();
+        if (!trimmed) return;
+        const inInventory = (this.inventory || []).some(item => item.name && item.name.toLowerCase() === trimmed.toLowerCase());
+        if (inInventory) {
+            this.showNotification('Bu ilaç hali hazırda envanterde bulunduğu için katalogdan kaldırılamaz.', 'error');
+            return;
+        }
+        const beforeLength = (this.medicineCatalog || []).length;
+        this.medicineCatalog = (this.medicineCatalog || []).filter(item => item.toLowerCase() !== trimmed.toLowerCase());
+        if (this.catalogUsage && this.catalogUsage[trimmed.toLowerCase()]) {
+            delete this.catalogUsage[trimmed.toLowerCase()];
+        }
+        if (beforeLength === this.medicineCatalog.length) return;
+        this.persistMedicineCatalog();
+        this.persistCatalogUsage();
+        this.populateMedicineSuggestions();
+        this.renderCatalogList();
+        this.showNotification(`${trimmed} kataloğundan kaldırıldı`, 'success');
+    }
+
+    showManualFormFeedback(message, type = 'error') {
+        const el = document.getElementById('manualFormFeedback');
+        if (!el) return;
+        if (this.manualFormFeedbackTimer) {
+            clearTimeout(this.manualFormFeedbackTimer);
+            this.manualFormFeedbackTimer = null;
+        }
+        if (!message) {
+            el.classList.add('hidden');
+            el.classList.remove('error', 'success');
+            el.textContent = '';
+            return;
+        }
+        el.textContent = message;
+        el.classList.remove('hidden', 'error', 'success');
+        el.classList.add(type === 'success' ? 'success' : 'error');
+        if (type === 'success') {
+            this.manualFormFeedbackTimer = setTimeout(() => this.clearManualFormFeedback(), 3500);
+        }
+    }
+
+    clearManualFormFeedback() {
+        this.showManualFormFeedback('');
+    }
+
+    setTransferFilter(value) {
+        this.transferFilter = (value || '').toLowerCase();
+        this.populateTransferItems();
+    }
+
+    hideTransferPreview() {
+        const preview = document.getElementById('transferPreview');
+        if (!preview) return;
+        preview.textContent = '';
+        preview.classList.add('hidden');
+        preview.classList.remove('error');
+    }
+
+    updateTransferPreview() {
+        const preview = document.getElementById('transferPreview');
+        const select = document.getElementById('transferItem');
+        const fromSelect = document.getElementById('fromLocation');
+        const toSelect = document.getElementById('toLocation');
+        const quantityInput = document.getElementById('transferQuantity');
+        if (!preview || !select) return;
+
+        const itemId = select.value;
+        if (!itemId) {
+            this.hideTransferPreview();
+            return;
+        }
+
+        const sourceItem = this.inventory.find(item => item.id === itemId);
+        if (!sourceItem) {
+            this.hideTransferPreview();
+            return;
+        }
+
+        if (fromSelect && (!fromSelect.value || fromSelect.value !== sourceItem.location)) {
+            fromSelect.value = sourceItem.location;
+        }
+
+        const fromLocation = fromSelect ? fromSelect.value : sourceItem.location;
+        const toLocation = toSelect ? toSelect.value : '';
+        const quantity = parseInt(quantityInput?.value || '0', 10);
+        const validQuantity = Number.isInteger(quantity) ? quantity : 0;
+        const stock = sourceItem.quantity || 0;
+
+        if (quantityInput) {
+            quantityInput.max = Math.max(stock, 0);
+        }
+
+        const destinationItem = (toLocation)
+            ? this.inventory.find(item =>
+                item.name.toLowerCase() === sourceItem.name.toLowerCase() &&
+                item.location === toLocation &&
+                (item.expirationDate || null) === (sourceItem.expirationDate || null))
+            : null;
+
+        const destinationStock = destinationItem ? destinationItem.quantity : 0;
+        const sourceName = this.getLocationDisplayName(fromLocation);
+        const destinationName = toLocation ? this.getLocationDisplayName(toLocation) : null;
+
+        const lines = [];
+        const sourceAfter = Math.max(stock - validQuantity, 0);
+        lines.push(`<div><strong>Kaynak ${sourceName}</strong>: ${stock} → ${sourceAfter}</div>`);
+
+        if (destinationName) {
+            const destAfter = destinationStock + (validQuantity > 0 ? validQuantity : 0);
+            lines.push(`<div><strong>Hedef ${destinationName}</strong>: ${destinationStock}${validQuantity > 0 ? ` → ${destAfter}` : ''}</div>`);
+        } else {
+            lines.push('<div>Hedef konumu seçilmedi.</div>');
+        }
+
+        if (sourceItem.expirationDate) {
+            lines.push(`<div>Son Kullanma: ${this.formatDate(sourceItem.expirationDate)}</div>`);
+        }
+
+        preview.innerHTML = lines.join('');
+        preview.classList.remove('hidden', 'error');
+
+        if (validQuantity > stock) {
+            preview.classList.add('error');
+            lines.push('<div>⚠️ Aktarım adedi stoktan fazla.</div>');
+            preview.innerHTML = lines.join('');
+        }
     }
 
     normalizeLocalData() {
@@ -277,8 +594,8 @@ class MedicineInventory {
         this.showSection('inventory');
         const formWrap = document.querySelector('.manual-entry');
         if (formWrap) formWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        const codeInput = document.getElementById('medicineCode');
-        if (codeInput) setTimeout(() => codeInput.focus(), 250);
+        const nameInput = document.getElementById('medicineName');
+        if (nameInput) setTimeout(() => nameInput.focus(), 250);
     }
 
     // Parse common GS1 Data (supports (01)GTIN and (21)Serial; also FNC1-separated)
@@ -326,10 +643,10 @@ class MedicineInventory {
     }
 
     async fetchMedicineInfo(barcode) {
-    console.log('Barkod için ilaç bilgisi getiriliyor:', barcode);
+        console.log('Barkod için ilaç bilgisi getiriliyor:', barcode);
         
-    // Barkod işlendi bilgisini göster
-    this.showNotification(`🔍 Barkod işleniyor: ${barcode}`, 'info');
+        // Barkod işlendi bilgisini göster
+        this.showNotification(`🔍 Barkod işleniyor: ${barcode}`, 'info');
         
         // This is where you could integrate with medicine databases
         // For now, we'll just show the barcode and provide basic info
@@ -355,7 +672,7 @@ class MedicineInventory {
                 
                 // Başarı mesajı göster
                 setTimeout(() => {
-                    this.showNotification(`✅ ${barcode} kodlu ilacı eklemeye hazırsınız`, 'success');
+                    this.showNotification(`✅ ${barcode} kodu işlendi, ilaç adını seçebilirsiniz`, 'success');
                 }, 1500);
             }
         } catch (error) {
@@ -365,59 +682,87 @@ class MedicineInventory {
 
     handleManualEntry(e) {
         e.preventDefault();
-        
-        const editingId = e.target.dataset.editingId;
-        const formData = new FormData(e.target);
+        const form = e.target;
+        const editingId = form.dataset.editingId;
+        const formData = new FormData(form);
+        const nameRaw = (formData.get('medicineName') || '').trim();
+        const quantityRaw = formData.get('quantity');
+        const expirationRaw = (formData.get('expirationDate') || '').trim();
+        const location = (formData.get('location') || '').trim();
+
         const medicineData = {
-            code: formData.get('medicineCode') || document.getElementById('medicineCode').value,
-            name: formData.get('medicineName') || document.getElementById('medicineName').value,
-            quantity: parseInt(formData.get('quantity') || document.getElementById('quantity').value),
-            expirationDate: (formData.get('expirationDate') || document.getElementById('expirationDate').value || '').trim() || null,
-            location: formData.get('location') || document.getElementById('location').value
+            name: nameRaw,
+            quantity: Number.parseInt(quantityRaw, 10),
+            expirationDate: expirationRaw || null,
+            location
         };
 
+        const validation = this.validateManualEntryData(medicineData);
+        if (!validation.valid) {
+            this.showManualFormFeedback(validation.message, 'error');
+            return;
+        }
+
+        this.clearManualFormFeedback();
+
         if (editingId) {
-            // Update existing item
             const itemIndex = this.inventory.findIndex(item => item.id === editingId);
             if (itemIndex !== -1) {
-                this.inventory[itemIndex] = {
-                    ...this.inventory[itemIndex],
-                    ...medicineData
-                };
+                Object.assign(this.inventory[itemIndex], medicineData);
+                this.markItemUpdated(this.inventory[itemIndex]);
                 this.showNotification(`${medicineData.name} güncellendi`, 'success');
             }
         } else {
-            // Add new item
             const medicine = {
                 ...medicineData,
                 id: Date.now().toString(),
                 addedDate: new Date().toISOString()
             };
 
-            // Check if medicine already exists at this location
-            const existingIndex = this.inventory.findIndex(item => 
-                item.code === medicine.code && 
+            const existingIndex = this.inventory.findIndex(item =>
+                item.name.toLowerCase() === medicine.name.toLowerCase() &&
                 item.location === medicine.location &&
                 (item.expirationDate || null) === (medicine.expirationDate || null)
             );
 
             if (existingIndex !== -1) {
-                // Update quantity if exists
                 this.inventory[existingIndex].quantity += medicine.quantity;
+                this.markItemUpdated(this.inventory[existingIndex]);
             } else {
-                // Add new entry
+                this.markItemUpdated(medicine);
                 this.inventory.push(medicine);
             }
-            
+
             this.showNotification(`${medicine.name} ${this.getLocationDisplayName(medicine.location)} konumuna eklendi`, 'success');
         }
 
         this.ensureMedicineInCatalog(medicineData.name);
+        this.refreshCatalogFromInventory();
         this.saveData();
         this.clearForm();
         this.updateInventoryDisplay();
         this.updateStats();
         this.populateTransferItems();
+        this.updateTransferPreview();
+    }
+
+    validateManualEntryData(data) {
+        const errors = [];
+        const name = (data?.name || '').trim();
+        const quantity = Number.isFinite(data?.quantity) ? data.quantity : Number.NaN;
+        if (!name) errors.push('İlaç adı gerekli.');
+        if (!Number.isInteger(quantity) || quantity <= 0) errors.push('Adet alanı en az 1 olmalıdır.');
+        if (!data?.location) errors.push('Lütfen bir konum seçin.');
+        if (data?.expirationDate) {
+            const parsed = Date.parse(data.expirationDate);
+            if (Number.isNaN(parsed)) {
+                errors.push('Son kullanma tarihi geçerli değil.');
+            }
+        }
+        return {
+            valid: errors.length === 0,
+            message: errors.join(' ')
+        };
     }
 
     updateInventoryDisplay() {
@@ -432,8 +777,7 @@ class MedicineInventory {
         
         if (searchTerm) {
             filteredInventory = filteredInventory.filter(item =>
-                item.name.toLowerCase().includes(searchTerm) ||
-                item.code.toLowerCase().includes(searchTerm)
+                item.name.toLowerCase().includes(searchTerm)
             );
         }
 
@@ -466,7 +810,6 @@ class MedicineInventory {
         div.innerHTML = `
             <div class="item-info">
                 <h4>${item.name}</h4>
-                <p><strong>Kod:</strong> ${item.code}</p>
                 ${item.expirationDate ? `<p><strong>Son Kullanma:</strong> ${this.formatDate(item.expirationDate)} ${this.getExpirationStatus(daysUntilExpiration)}</p>` : ''}
             </div>
             <div class="item-location">${this.getLocationDisplayName(item.location)}</div>
@@ -510,62 +853,163 @@ class MedicineInventory {
         document.getElementById('expiredItems').textContent = expired;
     }
 
+    markItemUpdated(item) {
+        if (!item) return;
+        item.updatedAt = new Date().toISOString();
+        item.updatedBy = this.cloud?.clientId || 'local';
+        this.recordLocalChange('inventory', item.id, { name: item.name });
+    }
+
+    recordLocalChange(type, id, meta = {}) {
+        if (!id) return;
+        this.localChangeTracker.set(id, {
+            type,
+            time: Date.now(),
+            meta
+        });
+        this.cleanupLocalChangeTracker();
+    }
+
+    cleanupLocalChangeTracker(maxAgeMs = 60 * 60 * 1000) {
+        const threshold = Date.now() - maxAgeMs;
+        for (const [id, info] of this.localChangeTracker.entries()) {
+            if (!info?.time || info.time < threshold) {
+                this.localChangeTracker.delete(id);
+            }
+        }
+    }
+
+    detectInventoryConflicts(remoteInventory = []) {
+        const conflicts = [];
+        remoteInventory.forEach((remoteItem) => {
+            if (!remoteItem || !remoteItem.id) return;
+            const tracked = this.localChangeTracker.get(remoteItem.id);
+            if (!tracked) return;
+            const remoteUpdatedAt = remoteItem.updatedAt ? new Date(remoteItem.updatedAt).getTime() : 0;
+            if (!remoteUpdatedAt || !tracked.time) {
+                this.localChangeTracker.delete(remoteItem.id);
+                return;
+            }
+            const delta = remoteUpdatedAt - tracked.time;
+            const isForeignUpdate = remoteItem.updatedBy && remoteItem.updatedBy !== this.cloud?.clientId;
+            if ((isForeignUpdate && delta > 1500) || delta > 5000) {
+                conflicts.push({ remote: remoteItem, local: tracked.meta });
+                this.localChangeTracker.delete(remoteItem.id);
+            } else if (Math.abs(delta) < 1500) {
+                // treat as resolved (likely our own push echo)
+                this.localChangeTracker.delete(remoteItem.id);
+            }
+        });
+        return conflicts;
+    }
+
+    handleSyncConflicts(conflicts = []) {
+        if (!conflicts.length) return;
+        const names = [];
+        conflicts.forEach((conflict) => {
+            const remoteName = conflict?.remote?.name;
+            const localName = conflict?.local?.name;
+            if (remoteName) names.push(remoteName);
+            else if (localName) names.push(localName);
+        });
+        const uniqueNames = Array.from(new Set(names.filter(Boolean)));
+        const preview = uniqueNames.slice(0, 3).join(', ');
+        const extra = uniqueNames.length > 3 ? ` ve ${uniqueNames.length - 3} kayıt` : '';
+        const summary = uniqueNames.length ? `${preview}${extra}`.trim() : `${conflicts.length} kayıt`;
+        this.lastSyncStatus.lastConflict = {
+            time: Date.now(),
+            details: uniqueNames
+        };
+        this.updateDataStatus();
+        if (Date.now() - this.lastConflictNotifiedAt > 5000) {
+            this.lastConflictNotifiedAt = Date.now();
+            this.showNotification(`⚠️ ${conflicts.length} kayıt başka bir cihazda güncellendi: ${summary}`, 'error');
+        }
+    }
+
     handleTransfer(e) {
         e.preventDefault();
 
-        const itemId = document.getElementById('transferItem').value;
-        const fromLocation = document.getElementById('fromLocation').value;
-        const toLocation = document.getElementById('toLocation').value;
-        const quantity = parseInt(document.getElementById('transferQuantity').value, 10);
+        const itemSelect = document.getElementById('transferItem');
+        const fromSelect = document.getElementById('fromLocation');
+        const toSelect = document.getElementById('toLocation');
+        const quantityInput = document.getElementById('transferQuantity');
 
-        if (!itemId || !fromLocation || !toLocation || Number.isNaN(quantity) || quantity <= 0) {
-            alert('Lütfen geçerli bir ürün, konum ve adet seçin.');
+        const itemId = itemSelect ? itemSelect.value : '';
+        if (!itemId) {
+            this.showNotification('Lütfen taşınacak ilacı seçin.', 'error');
+            return;
+        }
+
+        const sourceItem = this.inventory.find(item => item.id === itemId);
+        if (!sourceItem) {
+            this.showNotification('Seçilen ilaç envanterde bulunamadı.', 'error');
+            return;
+        }
+
+        if (fromSelect) fromSelect.value = sourceItem.location;
+        const fromLocation = sourceItem.location;
+        const toLocation = toSelect ? toSelect.value : '';
+        if (!toLocation) {
+            this.showNotification('Hedef konumu seçin.', 'error');
             return;
         }
 
         if (fromLocation === toLocation) {
-            alert('Kaynak ve hedef konumlar aynı olamaz.');
+            this.showNotification('Kaynak ve hedef konumlar farklı olmalıdır.', 'error');
             return;
         }
 
-        const sourceItem = this.inventory.find(item => item.id === itemId && item.location === fromLocation);
-        if (!sourceItem || sourceItem.quantity < quantity) {
-            alert('Kaynak konumda yeterli stok bulunmuyor.');
+        const quantity = parseInt(quantityInput?.value || '0', 10);
+        if (!Number.isInteger(quantity) || quantity <= 0) {
+            this.showNotification('Aktarım için geçerli bir adet girin.', 'error');
+            return;
+        }
+
+        if (sourceItem.quantity < quantity) {
+            this.showNotification('Kaynak konumda yeterli stok bulunmuyor.', 'error');
+            this.updateTransferPreview();
             return;
         }
 
         sourceItem.quantity -= quantity;
+        this.markItemUpdated(sourceItem);
 
         const destItem = this.inventory.find(item =>
-            item.code === sourceItem.code &&
+            item.name.toLowerCase() === sourceItem.name.toLowerCase() &&
             item.location === toLocation &&
             (item.expirationDate || null) === (sourceItem.expirationDate || null)
         );
 
         if (destItem) {
             destItem.quantity += quantity;
+            this.markItemUpdated(destItem);
         } else {
             const newItem = { ...sourceItem };
             newItem.id = Date.now().toString();
             newItem.location = toLocation;
             newItem.quantity = quantity;
+            this.markItemUpdated(newItem);
             this.inventory.push(newItem);
         }
 
         if (sourceItem.quantity === 0) {
+            this.recordLocalChange('inventory', sourceItem.id, { name: sourceItem.name, removed: true });
             this.inventory = this.inventory.filter(item => item.id !== sourceItem.id);
         }
 
         const transfer = {
             id: Date.now().toString(),
             medicineName: sourceItem.name,
-            medicineCode: sourceItem.code,
             quantity,
             fromLocation,
             toLocation,
             date: new Date().toISOString()
         };
         this.transfers.unshift(transfer);
+        this.touchCatalogEntry(sourceItem.name);
+        this.populateMedicineSuggestions();
+        this.renderCatalogList();
 
         this.saveData();
         this.clearTransferForm();
@@ -588,11 +1032,36 @@ class MedicineInventory {
 
         const uniqueItems = new Map();
         this.inventory.forEach(item => {
-            const key = `${item.code}-${item.location}-${item.expirationDate || 'none'}`;
+            const key = `${item.name.toLowerCase()}-${item.location}-${item.expirationDate || 'none'}`;
             if (!uniqueItems.has(key)) uniqueItems.set(key, item);
         });
 
-        uniqueItems.forEach(item => {
+        const filter = (this.transferFilter || '').trim();
+        const items = Array.from(uniqueItems.values()).filter((item) => {
+            if (!filter) return true;
+            const normalizedFilter = filter.toLowerCase();
+            return item.name.toLowerCase().includes(normalizedFilter) ||
+                this.getLocationDisplayName(item.location).toLowerCase().includes(normalizedFilter);
+        }).sort((a, b) => {
+            const nameCompare = a.name.localeCompare(b.name, 'tr', { sensitivity: 'base' });
+            if (nameCompare !== 0) return nameCompare;
+            return this.getLocationDisplayName(a.location).localeCompare(this.getLocationDisplayName(b.location), 'tr', { sensitivity: 'base' });
+        });
+
+        if (!items.length) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.disabled = true;
+            option.textContent = 'Eşleşen ilaç bulunamadı';
+            select.appendChild(option);
+            select.value = '';
+            select.disabled = true;
+            this.hideTransferPreview();
+            return;
+        }
+
+        select.disabled = false;
+        items.forEach(item => {
             const option = document.createElement('option');
             option.value = item.id;
             option.textContent = `${item.name} (${this.getLocationDisplayName(item.location)}) • Adet: ${item.quantity}`;
@@ -603,6 +1072,7 @@ class MedicineInventory {
             const stillExists = Array.from(select.options).some(opt => opt.value === currentValue);
             select.value = stillExists ? currentValue : '';
         }
+        this.updateTransferPreview();
     }
 
     displayTransferHistory() {
@@ -633,6 +1103,10 @@ class MedicineInventory {
     clearTransferForm() {
         const form = document.getElementById('transferForm');
         if (form) form.reset();
+        const search = document.getElementById('transferSearch');
+        if (search) search.value = '';
+        this.transferFilter = '';
+        this.hideTransferPreview();
     }
 
     populateLocationSelects() {
@@ -682,12 +1156,14 @@ class MedicineInventory {
         const locationName = input.value.trim().toLowerCase().replace(/\s+/g, '_');
         
         if (!locationName) {
-            alert('Lütfen bir konum adı girin.');
+            this.showNotification('Lütfen bir konum adı girin.', 'error');
+            input.focus();
             return;
         }
         
         if (this.locations.includes(locationName)) {
-            alert('Bu konum zaten mevcut.');
+            this.showNotification('Bu konum zaten mevcut.', 'error');
+            input.focus();
             return;
         }
         
@@ -717,7 +1193,7 @@ class MedicineInventory {
 
     removeLocation(location) {
         if (this.inventory.some(item => item.location === location)) {
-            alert('Bu konumda envanter bulunduğu için kaldırılamaz. Önce ürünleri taşıyın veya silin.');
+            this.showNotification('Bu konumda envanter bulunduğu için kaldırılamaz. Önce ürünleri taşıyın veya silin.', 'error');
             return;
         }
         
@@ -737,7 +1213,6 @@ class MedicineInventory {
         
         details.innerHTML = `
             <h3>${item.name}</h3>
-            <p><strong>Kod:</strong> ${item.code}</p>
             <p><strong>Adet:</strong> ${item.quantity}</p>
             <p><strong>Konum:</strong> ${this.getLocationDisplayName(item.location)}</p>
             ${item.expirationDate ? `<p><strong>Son Kullanma:</strong> ${this.formatDate(item.expirationDate)} ${this.getExpirationStatus(daysUntilExpiration)}</p>` : ''}
@@ -769,7 +1244,6 @@ class MedicineInventory {
     this.showSection('inventory');
         
         // Populate the manual entry form with current item data
-        document.getElementById('medicineCode').value = item.code;
         document.getElementById('medicineName').value = item.name;
         document.getElementById('quantity').value = item.quantity;
         document.getElementById('expirationDate').value = item.expirationDate;
@@ -823,9 +1297,11 @@ class MedicineInventory {
                     this.transfers = data.transfers || [];
                     this.settings = data.settings || { expirationAlert: 30 };
                     this.medicineCatalog = this.buildMedicineCatalog(data.medicineCatalog || this.medicineCatalog || []);
+                    this.catalogUsage = this.normalizeCatalogUsage(data.medicineCatalogUsage || this.catalogUsage || {});
                     this.normalizeLocalData();
                     this.refreshCatalogFromInventory();
                     this.persistMedicineCatalog();
+                    this.persistCatalogUsage();
                     
                     this.saveData();
                     this.updateInventoryDisplay();
@@ -834,12 +1310,16 @@ class MedicineInventory {
                     this.populateTransferItems();
                     this.displayTransferHistory();
                     this.populateMedicineSuggestions();
+                    this.renderCatalogList();
                     this.displayLocations();
+                    this.localChangeTracker.clear();
+                    this.pendingDeletions.clear();
+                    this.updateDataStatus();
                     
                     this.showNotification('Veriler başarıyla içe aktarıldı', 'success');
                 }
             } catch (error) {
-                alert('Geçersiz dosya formatı. Lütfen geçerli bir JSON dosyası seçin.');
+                this.showNotification('Geçersiz dosya formatı. Lütfen geçerli bir JSON dosyası seçin.', 'error');
             }
         };
         reader.readAsText(file);
@@ -855,14 +1335,17 @@ class MedicineInventory {
                 localStorage.removeItem('transfers');
                 localStorage.removeItem('settings');
                 localStorage.removeItem('medicineCatalog');
+                localStorage.removeItem('medicineCatalogUsage');
                 
                 this.inventory = [];
                 this.locations = ['oda', 'arac', 'nakil', 'ev'];
                 this.transfers = [];
                 this.settings = { expirationAlert: 30 };
                 this.medicineCatalog = [...this.defaultMedicineCatalog];
+                this.catalogUsage = {};
                 this.normalizeLocalData();
                 this.persistMedicineCatalog();
+                this.persistCatalogUsage();
                 
                 this.updateInventoryDisplay();
                 this.updateStats();
@@ -870,8 +1353,19 @@ class MedicineInventory {
                 this.populateTransferItems();
                 this.displayTransferHistory();
                 this.populateMedicineSuggestions();
+                this.renderCatalogList();
                 this.displayLocations();
                 this.clearTransferForm();
+                this.localChangeTracker.clear();
+                this.pendingDeletions.clear();
+                this.lastSyncStatus = {
+                    lastPush: null,
+                    lastPull: null,
+                    lastError: null,
+                    lastConflict: null
+                };
+                this.updateDataStatus();
+                this.saveData();
                 
                 this.showNotification('Tüm veriler başarıyla silindi', 'success');
             }
@@ -891,7 +1385,8 @@ class MedicineInventory {
         localStorage.setItem('locations', JSON.stringify(this.locations));
         localStorage.setItem('transfers', JSON.stringify(this.transfers));
         localStorage.setItem('settings', JSON.stringify(this.settings));
-    this.persistMedicineCatalog();
+        this.persistMedicineCatalog();
+        this.persistCatalogUsage();
         this.updateDataStatus();
         // Push to cloud (debounced) if enabled
         if (!this.applyingRemote && this.settings.cloudSync?.enabled && typeof this.debouncedCloudSave === 'function') {
@@ -902,6 +1397,7 @@ class MedicineInventory {
 
     clearForm() {
         const form = document.getElementById('manualEntryForm');
+        if (!form) return;
         form.reset();
         
         // Reset edit mode
@@ -909,8 +1405,34 @@ class MedicineInventory {
         
         // Reset submit button
         const submitBtn = form.querySelector('button[type="submit"]');
-        submitBtn.textContent = 'Envantere Ekle';
-        submitBtn.style.background = '#667eea';
+        if (submitBtn) {
+            submitBtn.textContent = 'Envantere Ekle';
+            submitBtn.style.background = '#667eea';
+        }
+        this.clearManualFormFeedback();
+    }
+
+    formatRelativeTime(dateInput) {
+        if (!dateInput) return '';
+        const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+        if (Number.isNaN(date.getTime())) return '';
+        const diffMs = Date.now() - date.getTime();
+        if (diffMs < 0) return 'az önce';
+        const minutes = Math.floor(diffMs / 60000);
+        if (minutes < 1) return 'az önce';
+        if (minutes < 60) return `${minutes} dk önce`;
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours} sa önce`;
+        const days = Math.floor(hours / 24);
+        if (days < 7) return `${days} gün önce`;
+        return date.toLocaleDateString('tr-TR');
+    }
+
+    formatStatusClock(dateInput) {
+        if (!dateInput) return '';
+        const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+        if (Number.isNaN(date.getTime())) return '';
+        return date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
     }
 
     formatDate(dateString) {
@@ -951,18 +1473,9 @@ class MedicineInventory {
 
     setCloudStatus(text, type = 'info') {
         this.cloud.status = text;
-        const statusElement = document.getElementById('dataStatus');
-        if (!statusElement) return;
-        const itemCount = this.inventory.length;
-        const totalQuantity = this.inventory.reduce((sum, item) => sum + item.quantity, 0);
-        const base = itemCount === 0
-            ? '📊 Kayıtlı ilaç yok'
-            : `📊 ${itemCount} ilaç (${totalQuantity} toplam adet)`;
-        const color = type === 'success' ? 'rgba(40,167,69,0.8)'
-                    : type === 'error' ? 'rgba(220,53,69,0.85)'
-                    : 'rgba(40,167,69,0.8)';
-        statusElement.textContent = `${base} • Bulut: ${text}`;
-        statusElement.style.background = color;
+        this.cloud.statusType = type;
+        this.cloudStatusMeta = { text, type };
+        this.updateDataStatus();
     }
 
     randomId(n = 8) {
@@ -1014,15 +1527,20 @@ class MedicineInventory {
                     if (Array.isArray(data.medicineCatalog)) {
                         this.medicineCatalog = this.buildMedicineCatalog([...(this.medicineCatalog || []), ...data.medicineCatalog]);
                     }
+                    if (data.medicineCatalogUsage) {
+                        this.catalogUsage = this.mergeCatalogUsage(data.medicineCatalogUsage, this.catalogUsage);
+                    }
                     this.normalizeLocalData();
                     this.refreshCatalogFromInventory();
                     this.persistMedicineCatalog();
+                    this.persistCatalogUsage();
                     this.updateInventoryDisplay();
                     this.updateStats();
                     this.populateLocationSelects();
                     this.populateTransferItems();
                     this.displayTransferHistory();
                     this.populateMedicineSuggestions();
+                    this.renderCatalogList();
                     this.displayLocations();
                     this.saveData();
                 }
@@ -1030,6 +1548,11 @@ class MedicineInventory {
                 console.warn('Cloud preflight read failed:', preErr);
                 this.showNotification(`Bulut okuma hatası: ${preErr?.message || preErr}`, 'error');
                 this.setCloudStatus('okuma hatası', 'error');
+                this.lastSyncStatus.lastError = {
+                    time: Date.now(),
+                    message: preErr?.message || 'Bulut okuma hatası'
+                };
+                this.updateDataStatus();
             }
 
             // Real-time listener
@@ -1041,6 +1564,7 @@ class MedicineInventory {
                             locations: this.locations,
                             transfers: this.transfers,
                             medicineCatalog: this.medicineCatalog,
+                                                        medicineCatalogUsage: this.catalogUsage,
                             __lastWriter: this.cloud.clientId,
                             __updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                           }
@@ -1049,6 +1573,7 @@ class MedicineInventory {
                             locations: this.locations || ['oda','arac','nakil','ev'],
                             transfers: [],
                             medicineCatalog: this.medicineCatalog,
+                                                        medicineCatalogUsage: this.catalogUsage,
                             __lastWriter: this.cloud.clientId,
                             __updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                           };
@@ -1060,6 +1585,11 @@ class MedicineInventory {
                         console.warn('Seeding workspace failed:', e);
                         this.showNotification(`Buluta yazma hatası (ilk yükleme): ${e?.message || e}`, 'error');
                         this.setCloudStatus('yazma hatası', 'error');
+                        this.lastSyncStatus.lastError = {
+                            time: Date.now(),
+                            message: e?.message || 'Buluta yazma hatası'
+                        };
+                        this.updateDataStatus();
                     }
                     return;
                 }
@@ -1068,6 +1598,7 @@ class MedicineInventory {
                 this.cloud.lastRemoteUpdate = Date.now();
                 this.applyingRemote = true;
                 this.pendingLocalChange = false;
+                const conflicts = Array.isArray(data.inventory) ? this.detectInventoryConflicts(data.inventory) : [];
                 try {
                     if (Array.isArray(data.inventory)) {
                         this.inventory = (this.inventory?.length)
@@ -1087,12 +1618,16 @@ class MedicineInventory {
                     if (Array.isArray(data.medicineCatalog)) {
                         this.medicineCatalog = this.buildMedicineCatalog([...(this.medicineCatalog || []), ...data.medicineCatalog]);
                     }
+                    if (data.medicineCatalogUsage) {
+                        this.catalogUsage = this.mergeCatalogUsage(data.medicineCatalogUsage, this.catalogUsage);
+                    }
                 } finally {
                     this.applyingRemote = false;
                 }
                 this.normalizeLocalData();
                 this.refreshCatalogFromInventory();
                 this.persistMedicineCatalog();
+                this.persistCatalogUsage();
                 try {
                     const remoteIds = new Set((data.inventory || []).map(i => i && i.id).filter(Boolean));
                     if (this.pendingDeletions) {
@@ -1107,14 +1642,24 @@ class MedicineInventory {
                 this.populateTransferItems();
                 this.displayTransferHistory();
                 this.populateMedicineSuggestions();
+                this.renderCatalogList();
                 this.displayLocations();
                 this.saveData();
+                this.lastSyncStatus.lastPull = new Date();
+                this.lastSyncStatus.lastError = null;
+                this.handleSyncConflicts(conflicts);
+                this.updateDataStatus();
                 this.showNotification('☁️ Buluttan senkronize edildi', 'info');
                 this.setCloudStatus('bağlandı', 'success');
             }, (err) => {
                 console.warn('Cloud sync listener error:', err);
                 this.showNotification(`Bulut dinleyici hatası: ${err?.message || err}`, 'error');
                 this.setCloudStatus('dinleme hatası', 'error');
+                this.lastSyncStatus.lastError = {
+                    time: Date.now(),
+                    message: err?.message || 'Bulut dinleme hatası'
+                };
+                this.updateDataStatus();
             });
 
             // Prepare debounced save
@@ -1132,6 +1677,7 @@ class MedicineInventory {
                         locations: this.locations,
                         transfers: this.transfers,
                         medicineCatalog: this.medicineCatalog,
+                        medicineCatalogUsage: this.catalogUsage,
                         __lastWriter: this.cloud.clientId,
                         __updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                     };
@@ -1140,10 +1686,18 @@ class MedicineInventory {
                     this.setCloudStatus('bağlandı', 'success');
                     this.pendingLocalChange = false;
                     this.pendingDeletions.clear();
+                    this.lastSyncStatus.lastPush = new Date();
+                    this.lastSyncStatus.lastError = null;
+                    this.updateDataStatus();
                 } catch (e) {
                     console.warn('Cloud push failed:', e);
                     this.showNotification(`Bulut güncellemesi başarısız: ${e?.message || e}`, 'error');
                     this.setCloudStatus('güncelleme hatası', 'error');
+                    this.lastSyncStatus.lastError = {
+                        time: Date.now(),
+                        message: e?.message || 'Bulut güncellemesi başarısız'
+                    };
+                    this.updateDataStatus();
                 }
             }, 800);
 
@@ -1155,6 +1709,11 @@ class MedicineInventory {
             console.warn('Cloud sync failed to start:', e);
             this.showNotification(`Bulut senkronu başlatılamadı. ${e?.message || 'Firebase ayarlarını kontrol edin.'}`, 'error');
             this.setCloudStatus('başlatılamadı', 'error');
+            this.lastSyncStatus.lastError = {
+                time: Date.now(),
+                message: e?.message || 'Bulut senkronu başlatılamadı'
+            };
+            this.updateDataStatus();
         }
     }
 
@@ -1186,13 +1745,22 @@ class MedicineInventory {
                 map.set(r.id, r);
             }
         }
-        // Only overlay local items when there is a pending local change from this client.
-        // Otherwise, respect remote as the source of truth (so deletions propagate).
-        if (this.pendingLocalChange) {
-            for (const l of local) {
-                if (l && l.id != null) {
-                    map.set(l.id, l);
-                }
+        for (const l of local) {
+            if (!l || l.id == null) continue;
+            if (this.pendingDeletions && this.pendingDeletions.has(l.id)) continue;
+            const existing = map.get(l.id);
+            if (!existing) {
+                map.set(l.id, l);
+                continue;
+            }
+            const remoteTimeRaw = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+            const localTimeRaw = l.updatedAt ? new Date(l.updatedAt).getTime() : 0;
+            const remoteTime = Number.isFinite(remoteTimeRaw) ? remoteTimeRaw : 0;
+            const localTime = Number.isFinite(localTimeRaw) ? localTimeRaw : 0;
+            if (localTime > remoteTime) {
+                map.set(l.id, l);
+            } else if (localTime === remoteTime && l.updatedBy === this.cloud?.clientId) {
+                map.set(l.id, l);
             }
         }
         return Array.from(map.values());
@@ -1250,6 +1818,7 @@ class MedicineInventory {
             locations: this.locations,
             transfers: this.transfers,
             medicineCatalog: this.medicineCatalog,
+            medicineCatalogUsage: this.catalogUsage,
             settings: this.settings,
             exportDate: new Date().toISOString(),
             appVersion: '1.0.0'
@@ -1272,16 +1841,42 @@ class MedicineInventory {
     updateDataStatus() {
         const statusElement = document.getElementById('dataStatus');
         if (!statusElement) return;
-        
+        const cloudMeta = this.cloudStatusMeta || { text: 'pasif', type: 'info' };
         const itemCount = this.inventory.length;
         const totalQuantity = this.inventory.reduce((sum, item) => sum + item.quantity, 0);
-        if (itemCount === 0) {
-            statusElement.textContent = '📊 Kayıtlı ilaç yok';
-            statusElement.style.background = 'rgba(255,255,255,0.2)';
-        } else {
-            statusElement.textContent = `📊 ${itemCount} ilaç (${totalQuantity} toplam adet)`;
-            statusElement.style.background = 'rgba(40,167,69,0.8)';
+        const base = itemCount === 0
+            ? '📊 Kayıtlı ilaç yok'
+            : `📊 ${itemCount} ilaç (${totalQuantity} toplam adet)`;
+
+        const infoParts = [];
+        const now = Date.now();
+        if (this.lastSyncStatus.lastPull) {
+            infoParts.push(`son okuma ${this.formatStatusClock(this.lastSyncStatus.lastPull)}`);
         }
+        if (this.lastSyncStatus.lastPush) {
+            infoParts.push(`son gönderim ${this.formatStatusClock(this.lastSyncStatus.lastPush)}`);
+        }
+        if (this.pendingLocalChange) {
+            infoParts.push('yerel değişiklikler beklemede');
+        }
+        if (this.lastSyncStatus.lastConflict && (now - this.lastSyncStatus.lastConflict.time) < 24 * 60 * 60 * 1000) {
+            infoParts.push(`⚠️ Çakışma ${this.formatRelativeTime(this.lastSyncStatus.lastConflict.time)}`);
+        }
+        if (this.lastSyncStatus.lastError && (now - this.lastSyncStatus.lastError.time) < 60 * 60 * 1000) {
+            infoParts.push(`⚠️ ${this.lastSyncStatus.lastError.message || 'Bulut hatası'}`);
+        }
+
+        statusElement.textContent = `${base} • Bulut: ${cloudMeta.text}${infoParts.length ? ' • ' + infoParts.join(' • ') : ''}`;
+
+        let background = 'rgba(255,255,255,0.2)';
+        if (itemCount > 0) background = 'rgba(40,167,69,0.8)';
+        if (cloudMeta.type === 'success') background = 'rgba(40,167,69,0.8)';
+        if (cloudMeta.type === 'error' || (this.lastSyncStatus.lastError && now - this.lastSyncStatus.lastError.time < 15 * 60 * 1000)) {
+            background = 'rgba(220,53,69,0.85)';
+        } else if (this.lastSyncStatus.lastConflict && now - this.lastSyncStatus.lastConflict.time < 15 * 60 * 1000) {
+            background = 'rgba(240,173,78,0.85)';
+        }
+        statusElement.style.background = background;
     }
 
     // Auto-backup removed
