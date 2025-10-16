@@ -1,11 +1,45 @@
 class MedicineInventory {
     constructor() {
-    this.inventory = JSON.parse(localStorage.getItem('medicineInventory')) || [];
-    this.locations = JSON.parse(localStorage.getItem('locations')) || ['oda', 'arac', 'nakil', 'ev'];
-    this.transfers = JSON.parse(localStorage.getItem('transfers')) || [];
+        this.inventory = JSON.parse(localStorage.getItem('medicineInventory')) || [];
+        this.locations = JSON.parse(localStorage.getItem('locations')) || ['oda', 'arac', 'nakil', 'ev'];
+        this.transfers = JSON.parse(localStorage.getItem('transfers')) || [];
         this.settings = JSON.parse(localStorage.getItem('settings')) || {
             expirationAlert: 30
         };
+
+        this.defaultMedicineCatalog = [
+            'Adrenalin amp 1 mg',
+            'Lidokain %2 amp',
+            'Atropin amp 0,5 mg',
+            'Antihistaminik amp',
+            'Spazmolitik amp',
+            'Kalsiyum amp',
+            'Kortikosteroid amp (deksametazon) (8mg)',
+            'Kortikosteroid amp (metilprednizolon) (40mg)',
+            'Diazepam amp',
+            'Midazolam 5 mg amp',
+            'Antiemetik amp',
+            'Analjezik amp (im/iv)',
+            'Sodyum Bikarbonat (NaHCo3) amp',
+            'Nalokson amp',
+            'Nebul (salbutamol+ipratropium bromür)',
+            'Anestezik pomad',
+            'Antimikrobiyal pomad',
+            'Proton pompa inhibitörü flakon',
+            'Asetilsalisilik asit tb (kutu)',
+            'Kaptopril tb 25 mg (kutu)',
+            '%20 Dekstroz 150 cc',
+            '%10 dekstroz 250 cc',
+            '%5 dekstroz 150 cc',
+            'İzotonik 100 cc',
+            'İzotonik 250 cc',
+            'İzotonik 500 cc',
+            'Ringer laktat 500 cc',
+            'Magnezyum sülfat amp',
+            'Flumazenil 0,5 mg amp'
+        ];
+        const storedCatalog = JSON.parse(localStorage.getItem('medicineCatalog')) || [];
+        this.medicineCatalog = this.buildMedicineCatalog(storedCatalog);
 
         this.locationAliases = {
             'store': 'oda',
@@ -14,6 +48,8 @@ class MedicineInventory {
             'home': 'ev'
         };
         this.normalizeLocalData();
+        this.refreshCatalogFromInventory();
+        this.persistMedicineCatalog();
 
         // Optional: embed default Firebase Cloud Sync here so the app connects without manual input
         // Replace the firebaseConfig object below with your own, or comment this block to disable auto-embed.
@@ -97,10 +133,11 @@ class MedicineInventory {
         this.updateInventoryDisplay();
         this.updateStats();
         this.populateLocationSelects();
-    this.populateTransferItems();
-    this.displayTransferHistory();
+        this.populateTransferItems();
+        this.displayTransferHistory();
         this.displayLocations();
         this.updateDataStatus();
+        this.populateMedicineSuggestions();
         // Auto-backup removed
     }
 
@@ -165,6 +202,49 @@ class MedicineInventory {
     }
 
     // Scanner-related functions removed
+
+    buildMedicineCatalog(extra = []) {
+        const uniqueMap = new Map();
+        [...(this.defaultMedicineCatalog || []), ...(extra || [])].forEach((name) => {
+            const trimmed = (name || '').trim();
+            if (!trimmed) return;
+            const key = trimmed.toLowerCase();
+            if (!uniqueMap.has(key)) uniqueMap.set(key, trimmed);
+        });
+        return Array.from(uniqueMap.values()).sort((a, b) => a.localeCompare(b, 'tr', { sensitivity: 'base' }));
+    }
+
+    refreshCatalogFromInventory() {
+        const inventoryNames = (this.inventory || []).map(item => (item?.name || '').trim()).filter(Boolean);
+        this.medicineCatalog = this.buildMedicineCatalog([...(this.medicineCatalog || []), ...inventoryNames]);
+    }
+
+    persistMedicineCatalog() {
+        try {
+            localStorage.setItem('medicineCatalog', JSON.stringify(this.medicineCatalog || []));
+        } catch {}
+    }
+
+    populateMedicineSuggestions() {
+        const datalist = document.getElementById('medicineNameSuggestions');
+        if (!datalist) return;
+        datalist.innerHTML = '';
+        (this.medicineCatalog || []).forEach((name) => {
+            const option = document.createElement('option');
+            option.value = name;
+            datalist.appendChild(option);
+        });
+    }
+
+    ensureMedicineInCatalog(name) {
+        const trimmed = (name || '').trim();
+        if (!trimmed) return;
+        const exists = (this.medicineCatalog || []).some(item => item.toLowerCase() === trimmed.toLowerCase());
+        if (exists) return;
+        this.medicineCatalog = this.buildMedicineCatalog([...(this.medicineCatalog || []), trimmed]);
+        this.persistMedicineCatalog();
+        this.populateMedicineSuggestions();
+    }
 
     normalizeLocalData() {
         const map = this.locationAliases || {};
@@ -332,11 +412,12 @@ class MedicineInventory {
             this.showNotification(`${medicine.name} ${this.getLocationDisplayName(medicine.location)} konumuna eklendi`, 'success');
         }
 
+        this.ensureMedicineInCatalog(medicineData.name);
         this.saveData();
         this.clearForm();
         this.updateInventoryDisplay();
         this.updateStats();
-    this.populateTransferItems();
+        this.populateTransferItems();
     }
 
     updateInventoryDisplay() {
@@ -741,7 +822,10 @@ class MedicineInventory {
                     this.locations = data.locations || ['oda', 'arac', 'nakil', 'ev'];
                     this.transfers = data.transfers || [];
                     this.settings = data.settings || { expirationAlert: 30 };
+                    this.medicineCatalog = this.buildMedicineCatalog(data.medicineCatalog || this.medicineCatalog || []);
                     this.normalizeLocalData();
+                    this.refreshCatalogFromInventory();
+                    this.persistMedicineCatalog();
                     
                     this.saveData();
                     this.updateInventoryDisplay();
@@ -749,6 +833,7 @@ class MedicineInventory {
                     this.populateLocationSelects();
                     this.populateTransferItems();
                     this.displayTransferHistory();
+                    this.populateMedicineSuggestions();
                     this.displayLocations();
                     
                     this.showNotification('Veriler başarıyla içe aktarıldı', 'success');
@@ -769,18 +854,22 @@ class MedicineInventory {
                 localStorage.removeItem('locations');
                 localStorage.removeItem('transfers');
                 localStorage.removeItem('settings');
+                localStorage.removeItem('medicineCatalog');
                 
                 this.inventory = [];
                 this.locations = ['oda', 'arac', 'nakil', 'ev'];
                 this.transfers = [];
                 this.settings = { expirationAlert: 30 };
+                this.medicineCatalog = [...this.defaultMedicineCatalog];
                 this.normalizeLocalData();
+                this.persistMedicineCatalog();
                 
                 this.updateInventoryDisplay();
                 this.updateStats();
                 this.populateLocationSelects();
                 this.populateTransferItems();
                 this.displayTransferHistory();
+                this.populateMedicineSuggestions();
                 this.displayLocations();
                 this.clearTransferForm();
                 
@@ -802,6 +891,7 @@ class MedicineInventory {
         localStorage.setItem('locations', JSON.stringify(this.locations));
         localStorage.setItem('transfers', JSON.stringify(this.transfers));
         localStorage.setItem('settings', JSON.stringify(this.settings));
+    this.persistMedicineCatalog();
         this.updateDataStatus();
         // Push to cloud (debounced) if enabled
         if (!this.applyingRemote && this.settings.cloudSync?.enabled && typeof this.debouncedCloudSave === 'function') {
@@ -921,12 +1011,18 @@ class MedicineInventory {
                     if (!(this.inventory?.length) && Array.isArray(data.inventory)) this.inventory = data.inventory;
                     if (!(this.locations?.length) && Array.isArray(data.locations)) this.locations = data.locations;
                     if (!(this.transfers?.length) && Array.isArray(data.transfers)) this.transfers = data.transfers;
+                    if (Array.isArray(data.medicineCatalog)) {
+                        this.medicineCatalog = this.buildMedicineCatalog([...(this.medicineCatalog || []), ...data.medicineCatalog]);
+                    }
                     this.normalizeLocalData();
+                    this.refreshCatalogFromInventory();
+                    this.persistMedicineCatalog();
                     this.updateInventoryDisplay();
                     this.updateStats();
                     this.populateLocationSelects();
                     this.populateTransferItems();
                     this.displayTransferHistory();
+                    this.populateMedicineSuggestions();
                     this.displayLocations();
                     this.saveData();
                 }
@@ -938,22 +1034,24 @@ class MedicineInventory {
 
             // Real-time listener
             this.cloud.unsub = docRef.onSnapshot(async (snap) => {
-                                if (!snap.exists) {
-                                        const seedPayload = (this.inventory?.length || this.locations?.length || this.transfers?.length)
-                                                ? {
-                                                        inventory: this.inventory,
-                                                        locations: this.locations,
-                                                        transfers: this.transfers,
-                                                        __lastWriter: this.cloud.clientId,
-                                                        __updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                                                    }
-                                                : {
-                                                        inventory: [],
-                                                        locations: this.locations || ['oda','arac','nakil','ev'],
-                                                        transfers: [],
-                                                        __lastWriter: this.cloud.clientId,
-                                                        __updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                                                    };
+                if (!snap.exists) {
+                    const seedPayload = (this.inventory?.length || this.locations?.length || this.transfers?.length)
+                        ? {
+                            inventory: this.inventory,
+                            locations: this.locations,
+                            transfers: this.transfers,
+                            medicineCatalog: this.medicineCatalog,
+                            __lastWriter: this.cloud.clientId,
+                            __updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                          }
+                        : {
+                            inventory: [],
+                            locations: this.locations || ['oda','arac','nakil','ev'],
+                            transfers: [],
+                            medicineCatalog: this.medicineCatalog,
+                            __lastWriter: this.cloud.clientId,
+                            __updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                          };
                     try {
                         await docRef.set(seedPayload, { merge: true });
                         console.log('Cloud sync: seeded workspace');
@@ -986,10 +1084,15 @@ class MedicineInventory {
                             ? this.mergeByIdArray(data.transfers, this.transfers)
                             : data.transfers;
                     }
+                    if (Array.isArray(data.medicineCatalog)) {
+                        this.medicineCatalog = this.buildMedicineCatalog([...(this.medicineCatalog || []), ...data.medicineCatalog]);
+                    }
                 } finally {
                     this.applyingRemote = false;
                 }
                 this.normalizeLocalData();
+                this.refreshCatalogFromInventory();
+                this.persistMedicineCatalog();
                 try {
                     const remoteIds = new Set((data.inventory || []).map(i => i && i.id).filter(Boolean));
                     if (this.pendingDeletions) {
@@ -1003,6 +1106,7 @@ class MedicineInventory {
                 this.populateLocationSelects();
                 this.populateTransferItems();
                 this.displayTransferHistory();
+                this.populateMedicineSuggestions();
                 this.displayLocations();
                 this.saveData();
                 this.showNotification('☁️ Buluttan senkronize edildi', 'info');
@@ -1027,6 +1131,7 @@ class MedicineInventory {
                         inventory: this.inventory,
                         locations: this.locations,
                         transfers: this.transfers,
+                        medicineCatalog: this.medicineCatalog,
                         __lastWriter: this.cloud.clientId,
                         __updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                     };
@@ -1144,6 +1249,7 @@ class MedicineInventory {
             inventory: this.inventory,
             locations: this.locations,
             transfers: this.transfers,
+            medicineCatalog: this.medicineCatalog,
             settings: this.settings,
             exportDate: new Date().toISOString(),
             appVersion: '1.0.0'
@@ -1154,13 +1260,13 @@ class MedicineInventory {
         
         const a = document.createElement('a');
         a.href = url;
-    a.download = `ilac-envanteri-${new Date().toISOString().split('T')[0]}.json`;
+        a.download = `ilac-envanteri-${new Date().toISOString().split('T')[0]}.json`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
-    this.showNotification('✅ Veriler başarıyla dışa aktarıldı! Dosyayı güvenli bir yerde saklayın.', 'success');
+        this.showNotification('✅ Veriler başarıyla dışa aktarıldı! Dosyayı güvenli bir yerde saklayın.', 'success');
     }
 
     updateDataStatus() {
