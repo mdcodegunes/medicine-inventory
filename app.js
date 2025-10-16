@@ -401,6 +401,8 @@ class MedicineInventory {
         this.getSortedCatalog().forEach((name) => {
             const option = document.createElement('option');
             option.value = name;
+            option.label = name;
+            option.textContent = name;
             datalist.appendChild(option);
         });
     }
