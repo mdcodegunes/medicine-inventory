@@ -73,7 +73,13 @@ class MedicineInventory {
             '%5 dekstroz 500 cc'
         ];
         const storedCatalog = JSON.parse(localStorage.getItem('medicineCatalog')) || [];
-        this.medicineCatalog = this.buildMedicineCatalog(storedCatalog);
+        const customCatalog = (storedCatalog || []).filter((name) => {
+            if (typeof name !== 'string') return false;
+            const normalized = name.trim().toLowerCase();
+            if (!normalized) return false;
+            return !this.defaultMedicineCatalog.some((def) => def.toLowerCase() === normalized);
+        });
+        this.medicineCatalog = this.buildMedicineCatalog(customCatalog);
         const storedUsage = JSON.parse(localStorage.getItem('medicineCatalogUsage')) || {};
         this.catalogUsage = this.normalizeCatalogUsage(storedUsage);
 
@@ -84,7 +90,7 @@ class MedicineInventory {
             'home': 'oda',
         };
         this.normalizeLocalData();
-        this.refreshCatalogFromInventory();
+    this.refreshCatalogFromInventory();
         this.persistMedicineCatalog();
     this.persistCatalogUsage();
 
@@ -250,6 +256,13 @@ class MedicineInventory {
                 const match = Array.from(selectEl.options).find((opt) => opt.value && opt.value.toLowerCase() === current);
                 selectEl.value = match ? match.value : '';
             });
+            if (typeof medicineNameInput.showPicker === 'function') {
+                medicineNameInput.addEventListener('focus', () => {
+                    if (!medicineNameInput.value) {
+                        medicineNameInput.showPicker();
+                    }
+                });
+            }
         }
 
         // Inventory filters
@@ -351,8 +364,6 @@ class MedicineInventory {
     }
 
     refreshCatalogFromInventory() {
-        const inventoryNames = (this.inventory || []).map(item => (item?.name || '').trim()).filter(Boolean);
-        this.medicineCatalog = this.buildMedicineCatalog([...(this.medicineCatalog || []), ...inventoryNames]);
         this.renderCatalogList();
         this.populateMedicineSuggestions();
     }
@@ -1981,8 +1992,8 @@ class MedicineInventory {
                     if (!(this.inventory?.length) && Array.isArray(data.inventory)) this.inventory = data.inventory;
                     if (!(this.locations?.length) && Array.isArray(data.locations)) this.locations = data.locations;
                     if (!(this.transfers?.length) && Array.isArray(data.transfers)) this.transfers = data.transfers;
-                    if (Array.isArray(data.medicineCatalog)) {
-                        this.medicineCatalog = this.buildMedicineCatalog([...(this.medicineCatalog || []), ...data.medicineCatalog]);
+                    if (Array.isArray(data.medicineCatalog) && !(this.medicineCatalog && this.medicineCatalog.length)) {
+                        this.medicineCatalog = this.buildMedicineCatalog(data.medicineCatalog);
                     }
                     if (data.medicineCatalogUsage) {
                         this.catalogUsage = this.mergeCatalogUsage(data.medicineCatalogUsage, this.catalogUsage);
@@ -2072,8 +2083,8 @@ class MedicineInventory {
                             ? this.mergeByIdArray(data.transfers, this.transfers)
                             : data.transfers;
                     }
-                    if (Array.isArray(data.medicineCatalog)) {
-                        this.medicineCatalog = this.buildMedicineCatalog([...(this.medicineCatalog || []), ...data.medicineCatalog]);
+                    if (Array.isArray(data.medicineCatalog) && !(this.medicineCatalog && this.medicineCatalog.length)) {
+                        this.medicineCatalog = this.buildMedicineCatalog(data.medicineCatalog);
                     }
                     if (data.medicineCatalogUsage) {
                         this.catalogUsage = this.mergeCatalogUsage(data.medicineCatalogUsage, this.catalogUsage);
