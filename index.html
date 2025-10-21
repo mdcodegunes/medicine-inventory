@@ -42,6 +42,9 @@
                 <h3>İlaç Ekle</h3>
                 <div id="manualFormFeedback" class="form-feedback hidden"></div>
                 <form id="manualEntryForm">
+                    <select id="catalogSelect" class="catalog-select">
+                        <option value="">Katalogdan ilaç seçin</option>
+                    </select>
                     <input type="text" id="medicineName" name="medicineName" placeholder="İlaç Adı" list="medicineNameSuggestions" required>
                     <datalist id="medicineNameSuggestions"></datalist>
                     <input type="number" id="quantity" name="quantity" placeholder="Adet" min="1" required>

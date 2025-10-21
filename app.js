@@ -223,6 +223,33 @@ class MedicineInventory {
             manualForm.addEventListener('submit', (e) => this.handleManualEntry(e));
             manualForm.addEventListener('input', () => this.clearManualFormFeedback());
         }
+        const catalogSelect = document.getElementById('catalogSelect');
+        if (catalogSelect) {
+            catalogSelect.addEventListener('change', (e) => {
+                const target = e.target;
+                const value = target ? target.value : '';
+                const nameInput = document.getElementById('medicineName');
+                if (nameInput) {
+                    nameInput.value = value;
+                    if (value) nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    nameInput.focus();
+                }
+            });
+        }
+        const medicineNameInput = document.getElementById('medicineName');
+        if (medicineNameInput) {
+            medicineNameInput.addEventListener('input', () => {
+                const selectEl = document.getElementById('catalogSelect');
+                if (!selectEl) return;
+                const current = (medicineNameInput.value || '').trim().toLowerCase();
+                if (!current) {
+                    selectEl.value = '';
+                    return;
+                }
+                const match = Array.from(selectEl.options).find((opt) => opt.value && opt.value.toLowerCase() === current);
+                selectEl.value = match ? match.value : '';
+            });
+        }
 
         // Inventory filters
         const locFilter = document.getElementById('locationFilter');
@@ -467,15 +494,34 @@ class MedicineInventory {
 
     populateMedicineSuggestions() {
         const datalist = document.getElementById('medicineNameSuggestions');
-        if (!datalist) return;
-        datalist.innerHTML = '';
-        this.getSortedCatalog().forEach((name) => {
-            const option = document.createElement('option');
-            option.value = name;
-            option.label = name;
-            option.textContent = name;
-            datalist.appendChild(option);
-        });
+        const select = document.getElementById('catalogSelect');
+        const catalog = this.getSortedCatalog();
+        if (datalist) {
+            datalist.innerHTML = '';
+            catalog.forEach((name) => {
+                const option = document.createElement('option');
+                option.value = name;
+                option.label = name;
+                option.textContent = name;
+                datalist.appendChild(option);
+            });
+        }
+        if (select) {
+            const previous = select.value;
+            select.innerHTML = '<option value="">Katalogdan ilaç seçin</option>';
+            catalog.forEach((name) => {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                select.appendChild(option);
+            });
+            if (previous) {
+                const match = catalog.find((name) => name.toLowerCase() === previous.toLowerCase());
+                select.value = match || '';
+            } else {
+                select.value = '';
+            }
+        }
     }
 
     ensureMedicineInCatalog(name) {
@@ -1628,7 +1674,11 @@ class MedicineInventory {
     this.showSection('inventory');
         
         // Populate the manual entry form with current item data
-        document.getElementById('medicineName').value = item.name;
+        const medicineNameInput = document.getElementById('medicineName');
+        if (medicineNameInput) {
+            medicineNameInput.value = item.name;
+            medicineNameInput.dispatchEvent(new Event('input', { bubbles: true }));
+        }
         document.getElementById('quantity').value = item.quantity;
         document.getElementById('expirationDate').value = item.expirationDate;
         document.getElementById('location').value = item.location;
@@ -1793,6 +1843,8 @@ class MedicineInventory {
             submitBtn.textContent = 'Envantere Ekle';
             submitBtn.style.background = '#667eea';
         }
+        const catalogSelect = document.getElementById('catalogSelect');
+        if (catalogSelect) catalogSelect.value = '';
         this.clearManualFormFeedback();
     }
 

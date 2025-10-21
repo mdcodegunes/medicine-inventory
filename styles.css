@@ -307,6 +307,10 @@ nav {
     max-width: 500px;
 }
 
+.catalog-select {
+    width: 100%;
+}
+
 #manualEntryForm input,
 #manualEntryForm select {
     padding: 12px;
