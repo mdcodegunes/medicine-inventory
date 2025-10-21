@@ -1,42 +1,75 @@
 class MedicineInventory {
     constructor() {
         this.inventory = JSON.parse(localStorage.getItem('medicineInventory')) || [];
-        this.locations = JSON.parse(localStorage.getItem('locations')) || ['oda', 'arac', 'nakil', 'ev'];
-        this.transfers = JSON.parse(localStorage.getItem('transfers')) || [];
+        this.locations = JSON.parse(localStorage.getItem('locations')) || ['oda', 'arac', 'nakil'];
+    this.transfers = JSON.parse(localStorage.getItem('transfers')) || [];
+    this.activityLog = JSON.parse(localStorage.getItem('activityLog')) || [];
         this.settings = JSON.parse(localStorage.getItem('settings')) || {
             expirationAlert: 30
         };
 
-        this.defaultMedicineCatalog = [
+    this.defaultMedicineCatalog = [
             'Adrenalin amp 1 mg',
-            'Lidokain %2 amp',
+            'Ampisilin + Sulbaktam amp',
+            'Asetilsalisilik asit 100 mg',
             'Atropin amp 0,5 mg',
-            'Antihistaminik amp',
-            'Spazmolitik amp',
-            'Kalsiyum amp',
-            'Kortikosteroid amp (deksametazon) (8mg)',
-            'Kortikosteroid amp (metilprednizolon) (40mg)',
+            'Basitrasin / Neomisin sülfat krem',
+            'Butilskopolaminiyum bromür (hiyosin) amp',
+            'Dekstroz %3.33 + Sodyum klorür %0.3 250 ml ve 500 ml solüsyon',
+            'Deksametazon 4 mg',
+            'Deksametazon 8 mg',
+            'Deksketoprofen trometamol amp',
             'Diazepam amp',
-            'Midazolam 5 mg amp',
-            'Antiemetik amp',
-            'Analjezik amp (im/iv)',
-            'Sodyum Bikarbonat (NaHCo3) amp',
-            'Nalokson amp',
-            'Nebul (salbutamol+ipratropium bromür)',
-            'Anestezik pomad',
-            'Antimikrobiyal pomad',
-            'Proton pompa inhibitörü flakon',
-            'Asetilsalisilik asit tb (kutu)',
-            'Kaptopril tb 25 mg (kutu)',
-            '%20 Dekstroz 150 cc',
-            '%10 dekstroz 250 cc',
-            '%5 dekstroz 150 cc',
+            'Diklofenak sodyum 75 mg / 3 ml ampul',
+            'Dopamin ampul',
+            'Feniramin hidrojen maleat amp',
+            'Flumazenil 0,5 mg amp',
+            'Foley Sonda 14',
+            'Foley Sonda 16',
+            'Foley Sonda 18',
+            'Foley Sonda 20',
+            'Foley Sonda 22',
+            'Furosemid 20 mg / 2 ml IM/IV ampul',
+            'Gümüş sülfadiazin krem',
+            'Haloperidol amp',
+            'Heparin sodyum 25.000 IU / 5 ml flakon',
+            'İzososorbid dinitrat 5 mg sublingual tablet',
             'İzotonik 100 cc',
             'İzotonik 250 cc',
             'İzotonik 500 cc',
-            'Ringer laktat 500 cc',
+            'Kalsiyum amp',
+            'Kaptopril tablet 25 mg',
+            'Lavman',
+            'Lidokain %2 amp',
+            'Lidokain %5 pomad',
             'Magnezyum sülfat amp',
-            'Flumazenil 0,5 mg amp'
+            'Mannitol %20 100 ml',
+            'Metilprednizolon 20 mg amp',
+            'Metilprednizolon 40 mg amp',
+            'Metoklopramid HCl',
+            'Midazolam 5 mg amp',
+            'Nalokson amp',
+            'Nazogastrik Sonda 14',
+            'Nazogastrik Sonda 16',
+            'Nazogastrik Sonda 18',
+            'Nazogastrik Sonda 20',
+            'Nazogastrik Sonda 22',
+            'Nebul (salbutamol + ipratropium bromür)',
+            'Nitrofurazon %0.2 merhem',
+            'Ondansetron hidroklorür 4 mg / 2 ml',
+            'Pantoprazol 40 mg flakon',
+            'Parasetamol flakon',
+            'Prilokain HCl 20 mg/ml 20 ml flakon',
+            'Rifamisin ampul',
+            'Ringer laktat 500 cc',
+            'Seftriakson amp',
+            'Sodyum bikarbonat (NaHCO₃) amp',
+            'Teofilin 100 ml infüzyon torba',
+            'Tiyokolsikosid ampul',
+            '%10 dekstroz 250 cc',
+            '%20 dekstroz 150 cc',
+            '%5 dekstroz 150 cc',
+            '%5 dekstroz 500 cc'
         ];
         const storedCatalog = JSON.parse(localStorage.getItem('medicineCatalog')) || [];
         this.medicineCatalog = this.buildMedicineCatalog(storedCatalog);
@@ -47,12 +80,17 @@ class MedicineInventory {
             'store': 'oda',
             'car1': 'arac',
             'car2': 'nakil',
-            'home': 'ev'
+            'home': 'oda',
+            'ev': 'oda'
         };
         this.normalizeLocalData();
         this.refreshCatalogFromInventory();
         this.persistMedicineCatalog();
-        this.persistCatalogUsage();
+    this.persistCatalogUsage();
+
+    this.expirationFilter = null;
+
+    this.cleanActivityLog();
 
         // Optional: embed default Firebase Cloud Sync here so the app connects without manual input
         // Replace the firebaseConfig object below with your own, or comment this block to disable auto-embed.
@@ -151,6 +189,7 @@ class MedicineInventory {
         this.populateTransferItems();
         this.displayTransferHistory();
         this.displayLocations();
+    this.displayActivityLog();
         this.updateDataStatus();
         this.populateMedicineSuggestions();
         this.renderCatalogList();
@@ -172,6 +211,8 @@ class MedicineInventory {
     document.getElementById('inventoryBtn').addEventListener('click', () => this.showSection('inventory'));
     const transferBtn = document.getElementById('transferBtn');
     if (transferBtn) transferBtn.addEventListener('click', () => this.showSection('transfer'));
+    const activityBtn = document.getElementById('activityBtn');
+    if (activityBtn) activityBtn.addEventListener('click', () => this.showSection('activity'));
     document.getElementById('settingsBtn').addEventListener('click', () => this.showSection('settings'));
         const addItemBtn = document.getElementById('addItemBtn');
         if (addItemBtn) addItemBtn.addEventListener('click', () => this.quickAddItem());
@@ -190,6 +231,12 @@ class MedicineInventory {
         if (searchBox) searchBox.addEventListener('input', () => this.updateInventoryDisplay());
         const exportBtn = document.getElementById('exportBtn');
         if (exportBtn) exportBtn.addEventListener('click', () => this.exportData());
+        const exportExcelBtn = document.getElementById('exportExcelBtn');
+        if (exportExcelBtn) exportExcelBtn.addEventListener('click', () => this.exportToExcel());
+        const expirationButtons = document.querySelectorAll('.exp-filter-btn');
+        expirationButtons.forEach((btn) => {
+            btn.addEventListener('click', () => this.handleExpirationFilterClick(btn.dataset.filter || null));
+        });
 
     // Transfer formu
     const transferForm = document.getElementById('transferForm');
@@ -199,7 +246,10 @@ class MedicineInventory {
         const transferSelect = document.getElementById('transferItem');
         if (transferSelect) transferSelect.addEventListener('change', () => this.updateTransferPreview());
         const fromLocationSelect = document.getElementById('fromLocation');
-        if (fromLocationSelect) fromLocationSelect.addEventListener('change', () => this.updateTransferPreview());
+        if (fromLocationSelect) fromLocationSelect.addEventListener('change', () => {
+            this.populateTransferItems();
+            this.updateTransferPreview();
+        });
         const toLocationSelect = document.getElementById('toLocation');
         if (toLocationSelect) toLocationSelect.addEventListener('change', () => this.updateTransferPreview());
         const transferQuantityInput = document.getElementById('transferQuantity');
@@ -244,6 +294,12 @@ class MedicineInventory {
         if (deleteDetailsBtn) deleteDetailsBtn.addEventListener('click', () => {
             if (this.currentItemId) this.deleteItem(this.currentItemId);
         });
+        const consumeBtn = document.getElementById('consumeItemBtn');
+        if (consumeBtn) consumeBtn.addEventListener('click', () => this.showConsumeForm());
+        const consumeForm = document.getElementById('consumeForm');
+        if (consumeForm) consumeForm.addEventListener('submit', (evt) => this.handleConsumeSubmit(evt));
+        const cancelConsumeBtn = document.getElementById('cancelConsumeBtn');
+        if (cancelConsumeBtn) cancelConsumeBtn.addEventListener('click', () => this.hideConsumeForm());
     }
 
     // Scanner-related functions removed
@@ -276,6 +332,21 @@ class MedicineInventory {
         try {
             localStorage.setItem('medicineCatalogUsage', JSON.stringify(this.catalogUsage || {}));
         } catch {}
+    }
+
+    persistActivityLog() {
+        try {
+            localStorage.setItem('activityLog', JSON.stringify(this.activityLog || []));
+        } catch {}
+    }
+
+    cleanActivityLog(limit = 500) {
+        if (!Array.isArray(this.activityLog)) {
+            this.activityLog = [];
+        }
+        if (this.activityLog.length > limit) {
+            this.activityLog = this.activityLog.slice(0, limit);
+        }
     }
 
     normalizeCatalogUsage(raw = {}) {
@@ -482,6 +553,123 @@ class MedicineInventory {
         this.showManualFormFeedback('');
     }
 
+    getCurrentInventoryItem() {
+        if (!this.currentItemId) return null;
+        return this.inventory.find(item => item.id === this.currentItemId) || null;
+    }
+
+    showConsumeForm() {
+        const wrapper = document.getElementById('consumeFormWrapper');
+        if (!wrapper) return;
+        const item = this.getCurrentInventoryItem();
+        if (!item) {
+            this.showNotification('İlaç seçimi bulunamadı.', 'error');
+            return;
+        }
+        const quantityInput = document.getElementById('consumeQuantity');
+        const noteInput = document.getElementById('consumeNote');
+        if (quantityInput) {
+            quantityInput.value = '1';
+            quantityInput.max = Math.max(item.quantity, 1);
+            quantityInput.focus();
+        }
+        if (noteInput) {
+            noteInput.value = '';
+        }
+        wrapper.classList.remove('hidden');
+    }
+
+    hideConsumeForm() {
+        const wrapper = document.getElementById('consumeFormWrapper');
+        if (wrapper) wrapper.classList.add('hidden');
+        const form = document.getElementById('consumeForm');
+        if (form) form.reset();
+    }
+
+    handleConsumeSubmit(evt) {
+        evt.preventDefault();
+        const item = this.getCurrentInventoryItem();
+        if (!item) {
+            this.showNotification('Geçerli bir ilaç seçimi bulunamadı.', 'error');
+            return;
+        }
+        const originalLocation = item.location;
+        const originalName = item.name;
+        const quantityInput = document.getElementById('consumeQuantity');
+        const noteInput = document.getElementById('consumeNote');
+        const rawQty = quantityInput ? parseInt(quantityInput.value || '0', 10) : 0;
+        if (!Number.isInteger(rawQty) || rawQty <= 0) {
+            this.showNotification('Kullanılan miktar en az 1 olmalıdır.', 'error');
+            return;
+        }
+        if (rawQty > item.quantity) {
+            this.showNotification('Stokta yeterli ilaç bulunmuyor.', 'error');
+            return;
+        }
+
+        item.quantity -= rawQty;
+        const note = noteInput ? (noteInput.value || '').trim() : '';
+
+        if (item.quantity === 0) {
+            this.recordLocalChange('inventory', item.id, { name: item.name, removed: true });
+            this.inventory = this.inventory.filter(inv => inv.id !== item.id);
+            this.currentItemId = null;
+        } else {
+            this.markItemUpdated(item);
+        }
+
+        this.touchCatalogEntry(item.name);
+
+        this.saveData();
+        this.updateInventoryDisplay();
+        this.updateStats();
+        this.populateTransferItems();
+        this.hideConsumeForm();
+
+        this.recordActivity({
+            type: 'consumption',
+            medicineName: originalName,
+            quantity: rawQty,
+            location: originalLocation,
+            note,
+            createdAt: new Date().toISOString()
+        });
+
+        if (this.currentItemId) {
+            // Refresh details with updated values
+            const fresh = this.getCurrentInventoryItem();
+            if (fresh) {
+                this.showItemDetails(fresh);
+            } else {
+                this.closeDetailsPanel();
+            }
+        } else {
+            this.closeDetailsPanel();
+        }
+
+        const message = note
+            ? `${rawQty} adet ${item.name} düştünüz. Açıklama: ${note}`
+            : `${rawQty} adet ${item.name} düştünüz.`;
+        this.showNotification(message, 'success');
+    }
+
+    handleExpirationFilterClick(filter) {
+        const normalized = (filter === 'expired') ? 'expired' : (filter ? String(filter) : null);
+        this.expirationFilter = (this.expirationFilter === normalized) ? null : normalized;
+        this.updateExpirationFilterButtons();
+        this.updateInventoryDisplay();
+    }
+
+    updateExpirationFilterButtons() {
+        const buttons = document.querySelectorAll('.exp-filter-btn');
+        buttons.forEach((btn) => {
+            const filter = btn.dataset.filter || null;
+            const normalized = (filter === 'expired') ? 'expired' : (filter ? String(filter) : null);
+            const isActive = this.expirationFilter === normalized;
+            btn.classList.toggle('active', isActive);
+        });
+    }
+
     setTransferFilter(value) {
         this.transferFilter = (value || '').toLowerCase();
         this.populateTransferItems();
@@ -582,7 +770,7 @@ class MedicineInventory {
     // Simple section switcher for nav
     showSection(section) {
         this.currentSection = section;
-    const sections = ['inventory', 'transfer', 'settings'];
+    const sections = ['inventory', 'transfer', 'activity', 'settings'];
         sections.forEach((sec) => {
             const el = document.getElementById(`${sec}Section`);
             const btn = document.getElementById(`${sec}Btn`);
@@ -768,19 +956,35 @@ class MedicineInventory {
     }
 
     updateInventoryDisplay() {
-        const locationFilter = document.getElementById('locationFilter').value;
-    const searchTerm = document.getElementById('searchBox').value.toLowerCase();
-        
+        this.updateExpirationFilterButtons();
+        const locationFilterEl = document.getElementById('locationFilter');
+        const searchBoxEl = document.getElementById('searchBox');
+        const locationFilter = locationFilterEl ? locationFilterEl.value : '';
+        const searchTerm = searchBoxEl ? (searchBoxEl.value || '').toLowerCase() : '';
+
         let filteredInventory = this.inventory;
-        
+
         if (locationFilter) {
             filteredInventory = filteredInventory.filter(item => item.location === locationFilter);
         }
-        
+
         if (searchTerm) {
             filteredInventory = filteredInventory.filter(item =>
                 item.name.toLowerCase().includes(searchTerm)
             );
+        }
+
+        if (this.expirationFilter) {
+            if (this.expirationFilter === 'expired') {
+                filteredInventory = filteredInventory.filter(item => item.expirationDate && this.getDaysUntilExpiration(item.expirationDate) < 0);
+            } else {
+                const limit = parseInt(this.expirationFilter, 10);
+                filteredInventory = filteredInventory.filter(item => {
+                    if (!item.expirationDate) return false;
+                    const days = this.getDaysUntilExpiration(item.expirationDate);
+                    return days >= 0 && days <= limit;
+                });
+            }
         }
 
         const inventoryList = document.getElementById('inventoryList');
@@ -840,19 +1044,28 @@ class MedicineInventory {
     }
 
     updateStats() {
-        const total = this.inventory.reduce((sum, item) => sum + item.quantity, 0);
-        const expiringSoon = this.inventory.filter(item => {
-            if (!item.expirationDate) return false;
+        const calcWindow = (limit) => this.inventory.reduce((sum, item) => {
+            if (!item.expirationDate) return sum;
             const days = this.getDaysUntilExpiration(item.expirationDate);
-            return days > 0 && days <= this.settings.expirationAlert;
-        }).reduce((sum, item) => sum + item.quantity, 0);
-        
-        const expired = this.inventory.filter(item => item.expirationDate && this.getDaysUntilExpiration(item.expirationDate) < 0)
-            .reduce((sum, item) => sum + item.quantity, 0);
+            if (!Number.isFinite(days)) return sum;
+            if (limit === 'expired') {
+                return days < 0 ? sum + item.quantity : sum;
+            }
+            return (days >= 0 && days <= limit) ? sum + item.quantity : sum;
+        }, 0);
 
-        document.getElementById('totalItems').textContent = total;
-        document.getElementById('expiringSoon').textContent = expiringSoon;
-        document.getElementById('expiredItems').textContent = expired;
+        const expiring30 = calcWindow(30);
+        const expiring90 = calcWindow(90);
+        const expired = calcWindow('expired');
+
+        const exp30El = document.getElementById('expiring30Count');
+        if (exp30El) exp30El.textContent = expiring30;
+        const exp90El = document.getElementById('expiring90Count');
+        if (exp90El) exp90El.textContent = expiring90;
+        const expiredEl = document.getElementById('expiredCount');
+        if (expiredEl) expiredEl.textContent = expired;
+
+        this.updateExpirationFilterButtons();
     }
 
     markItemUpdated(item) {
@@ -974,6 +1187,9 @@ class MedicineInventory {
             return;
         }
 
+        const sourceItemId = sourceItem.id;
+        const expirationSnapshot = sourceItem.expirationDate || null;
+
         sourceItem.quantity -= quantity;
         this.markItemUpdated(sourceItem);
 
@@ -983,9 +1199,11 @@ class MedicineInventory {
             (item.expirationDate || null) === (sourceItem.expirationDate || null)
         );
 
+        let destinationItemId = null;
         if (destItem) {
             destItem.quantity += quantity;
             this.markItemUpdated(destItem);
+            destinationItemId = destItem.id;
         } else {
             const newItem = { ...sourceItem };
             newItem.id = Date.now().toString();
@@ -993,6 +1211,7 @@ class MedicineInventory {
             newItem.quantity = quantity;
             this.markItemUpdated(newItem);
             this.inventory.push(newItem);
+            destinationItemId = newItem.id;
         }
 
         if (sourceItem.quantity === 0) {
@@ -1006,7 +1225,11 @@ class MedicineInventory {
             quantity,
             fromLocation,
             toLocation,
-            date: new Date().toISOString()
+            date: new Date().toISOString(),
+            expirationDate: expirationSnapshot,
+            sourceItemId,
+            destinationItemId,
+            cancelled: false
         };
         this.transfers.unshift(transfer);
         this.touchCatalogEntry(sourceItem.name);
@@ -1023,6 +1246,101 @@ class MedicineInventory {
         const sourceName = this.getLocationDisplayName(fromLocation);
         const targetName = this.getLocationDisplayName(toLocation);
         this.showNotification(`${transfer.medicineName} ilacından ${quantity} adet ${sourceName} konumundan ${targetName} konumuna aktarıldı`, 'success');
+        this.recordActivity({
+            type: 'transfer',
+            medicineName: transfer.medicineName,
+            quantity,
+            fromLocation,
+            toLocation,
+            createdAt: transfer.date
+        });
+    }
+
+    cancelTransfer(transferId) {
+        const transfer = this.transfers.find((t) => t.id === transferId);
+        if (!transfer) {
+            this.showNotification('Transfer kaydı bulunamadı.', 'error');
+            return;
+        }
+        if (transfer.cancelled) {
+            this.showNotification('Transfer zaten geri alınmış.', 'info');
+            return;
+        }
+        const qty = Number(transfer.quantity) || 0;
+        if (qty <= 0) {
+            this.showNotification('Geçerli transfer miktarı bulunamadı.', 'error');
+            return;
+        }
+        const fromLocation = transfer.fromLocation;
+        const toLocation = transfer.toLocation;
+        const expiration = transfer.expirationDate || null;
+
+        let destinationItem = null;
+        if (transfer.destinationItemId) {
+            destinationItem = this.inventory.find(item => item.id === transfer.destinationItemId);
+        }
+        if (!destinationItem) {
+            destinationItem = this.inventory.find(item =>
+                item.name && item.name.toLowerCase() === (transfer.medicineName || '').toLowerCase() &&
+                item.location === toLocation &&
+                (item.expirationDate || null) === (expiration || null)
+            );
+        }
+        if (destinationItem) {
+            const newQty = (destinationItem.quantity || 0) - qty;
+            if (newQty <= 0) {
+                this.recordLocalChange('inventory', destinationItem.id, { name: destinationItem.name, removed: true });
+                this.inventory = this.inventory.filter(item => item.id !== destinationItem.id);
+            } else {
+                destinationItem.quantity = newQty;
+                this.markItemUpdated(destinationItem);
+            }
+        }
+
+        let sourceItem = null;
+        if (transfer.sourceItemId) {
+            sourceItem = this.inventory.find(item => item.id === transfer.sourceItemId);
+        }
+        if (!sourceItem) {
+            sourceItem = this.inventory.find(item =>
+                item.name && item.name.toLowerCase() === (transfer.medicineName || '').toLowerCase() &&
+                item.location === fromLocation &&
+                (item.expirationDate || null) === (expiration || null)
+            );
+        }
+        if (sourceItem) {
+            sourceItem.quantity = (sourceItem.quantity || 0) + qty;
+            this.markItemUpdated(sourceItem);
+        } else {
+            const restored = {
+                id: transfer.sourceItemId || Date.now().toString(),
+                name: transfer.medicineName,
+                quantity: qty,
+                location: fromLocation,
+                expirationDate: expiration,
+                addedDate: new Date().toISOString()
+            };
+            this.inventory.push(restored);
+            this.markItemUpdated(restored);
+        }
+
+        transfer.cancelled = true;
+        transfer.cancelledAt = new Date().toISOString();
+        this.recordActivity({
+            type: 'transfer_cancel',
+            medicineName: transfer.medicineName,
+            quantity: qty,
+            fromLocation,
+            toLocation,
+            createdAt: transfer.cancelledAt
+        });
+
+        this.saveData();
+        this.populateTransferItems();
+        this.displayTransferHistory();
+        this.updateInventoryDisplay();
+        this.updateStats();
+        this.showNotification(`${transfer.medicineName} transferi geri alındı.`, 'success');
     }
 
     populateTransferItems() {
@@ -1034,12 +1352,16 @@ class MedicineInventory {
 
         const uniqueItems = new Map();
         this.inventory.forEach(item => {
+            if (!item || !item.id || item.quantity <= 0) return;
             const key = `${item.name.toLowerCase()}-${item.location}-${item.expirationDate || 'none'}`;
             if (!uniqueItems.has(key)) uniqueItems.set(key, item);
         });
 
         const filter = (this.transferFilter || '').trim();
+        const fromSelect = document.getElementById('fromLocation');
+        const selectedLocation = fromSelect ? fromSelect.value : '';
         const items = Array.from(uniqueItems.values()).filter((item) => {
+            if (selectedLocation && item.location !== selectedLocation) return false;
             if (!filter) return true;
             const normalizedFilter = filter.toLowerCase();
             return item.name.toLowerCase().includes(normalizedFilter) ||
@@ -1054,7 +1376,7 @@ class MedicineInventory {
             const option = document.createElement('option');
             option.value = '';
             option.disabled = true;
-            option.textContent = 'Eşleşen ilaç bulunamadı';
+            option.textContent = selectedLocation ? 'Bu konumda envanter bulunamadı' : 'Eşleşen ilaç bulunamadı';
             select.appendChild(option);
             select.value = '';
             select.disabled = true;
@@ -1096,10 +1418,68 @@ class MedicineInventory {
                     <strong>${transfer.medicineName}</strong> (${transfer.quantity})<br>
                     <small>${this.getLocationDisplayName(transfer.fromLocation)} → ${this.getLocationDisplayName(transfer.toLocation)}</small>
                 </div>
-                <div class="transfer-date">${this.formatDate(transfer.date)}</div>
+                <div class="transfer-date">
+                    ${this.formatDate(transfer.date)}
+                    ${transfer.cancelled ? '<span class="transfer-status cancelled">İptal Edildi</span>' : `<button class="transfer-cancel" data-id="${transfer.id}">Geri Al</button>`}
+                </div>
             `;
             container.appendChild(div);
         });
+
+        container.querySelectorAll('.transfer-cancel').forEach((btn) => {
+            btn.addEventListener('click', (evt) => {
+                const id = evt.currentTarget.dataset.id;
+                if (id) this.cancelTransfer(id);
+            });
+        });
+    }
+
+    displayActivityLog(limit = 50) {
+        const container = document.getElementById('activityList');
+        if (!container) return;
+        container.innerHTML = '';
+        if (!Array.isArray(this.activityLog) || !this.activityLog.length) {
+            container.innerHTML = '<p>Henüz hareket kaydı yok.</p>';
+            return;
+        }
+        this.activityLog.slice(0, limit).forEach((activity) => {
+            const item = document.createElement('div');
+            item.className = 'activity-item';
+            const desc = this.formatActivityDescription(activity);
+            item.innerHTML = `
+                <div class="activity-main">
+                    <strong>${desc.title}</strong>
+                    <span class="activity-time">${this.formatRelativeTime(activity.createdAt)}</span>
+                </div>
+                <div class="activity-meta">${desc.detail}</div>
+            `;
+            container.appendChild(item);
+        });
+    }
+
+    formatActivityDescription(activity) {
+        const base = {
+            title: activity.type || 'Hareket',
+            detail: ''
+        };
+        switch (activity.type) {
+            case 'transfer':
+                base.title = `${activity.medicineName || 'İlaç'} transfer edildi`;
+                base.detail = `${activity.quantity || 0} adet ${this.getLocationDisplayName(activity.fromLocation)} → ${this.getLocationDisplayName(activity.toLocation)}`;
+                break;
+            case 'transfer_cancel':
+                base.title = `${activity.medicineName || 'İlaç'} transferi geri alındı`;
+                base.detail = `${activity.quantity || 0} adet ${this.getLocationDisplayName(activity.toLocation)} → ${this.getLocationDisplayName(activity.fromLocation)}`;
+                break;
+            case 'consumption':
+                base.title = `${activity.medicineName || 'İlaç'} kullanıldı`;
+                base.detail = `${activity.quantity || 0} adet ${this.getLocationDisplayName(activity.location)}${activity.note ? ` • ${activity.note}` : ''}`;
+                break;
+            default:
+                base.title = activity.title || 'Hareket';
+                base.detail = activity.detail || '';
+        }
+        return base;
     }
 
     clearTransferForm() {
@@ -1210,6 +1590,7 @@ class MedicineInventory {
     showItemDetails(item) {
         const panel = document.getElementById('itemDetailsPanel');
         const details = document.getElementById('itemDetails');
+        this.hideConsumeForm();
         
         const daysUntilExpiration = this.getDaysUntilExpiration(item.expirationDate);
         
@@ -1230,6 +1611,7 @@ class MedicineInventory {
         if (panel) {
             panel.classList.add('hidden');
         }
+        this.hideConsumeForm();
         this.currentItemId = null;
     }
 
@@ -1295,7 +1677,7 @@ class MedicineInventory {
                 
                 if (confirm('Bu işlem mevcut tüm verilerin üzerine yazacak. Emin misiniz?')) {
                     this.inventory = data.inventory || [];
-                    this.locations = data.locations || ['oda', 'arac', 'nakil', 'ev'];
+                    this.locations = data.locations || ['oda', 'arac', 'nakil'];
                     this.transfers = data.transfers || [];
                     this.settings = data.settings || { expirationAlert: 30 };
                     this.medicineCatalog = this.buildMedicineCatalog(data.medicineCatalog || this.medicineCatalog || []);
@@ -1340,7 +1722,7 @@ class MedicineInventory {
                 localStorage.removeItem('medicineCatalogUsage');
                 
                 this.inventory = [];
-                this.locations = ['oda', 'arac', 'nakil', 'ev'];
+                this.locations = ['oda', 'arac', 'nakil'];
                 this.transfers = [];
                 this.settings = { expirationAlert: 30 };
                 this.medicineCatalog = [...this.defaultMedicineCatalog];
@@ -1468,6 +1850,19 @@ class MedicineInventory {
                 }
             }, 300);
         }, 3000);
+    }
+
+    recordActivity(entry = {}) {
+        const normalized = {
+            id: entry.id || Date.now().toString(36),
+            type: entry.type || 'bilinmiyor',
+            createdAt: entry.createdAt || new Date().toISOString(),
+            ...entry
+        };
+        this.activityLog = [normalized, ...(this.activityLog || [])];
+        this.cleanActivityLog();
+        this.persistActivityLog();
+        this.displayActivityLog();
     }
 
     // ===== Cloud Sync (Beta) via Firebase Firestore (client-only) =====
@@ -1819,6 +2214,7 @@ class MedicineInventory {
             inventory: this.inventory,
             locations: this.locations,
             transfers: this.transfers,
+            activityLog: this.activityLog,
             medicineCatalog: this.medicineCatalog,
             medicineCatalogUsage: this.catalogUsage,
             settings: this.settings,
@@ -1838,6 +2234,42 @@ class MedicineInventory {
         URL.revokeObjectURL(url);
         
         this.showNotification('✅ Veriler başarıyla dışa aktarıldı! Dosyayı güvenli bir yerde saklayın.', 'success');
+    }
+
+    exportToExcel() {
+        if (!Array.isArray(this.inventory) || !this.inventory.length) {
+            this.showNotification('Dışa aktarılacak envanter kaydı bulunamadı.', 'error');
+            return;
+        }
+        const header = ['Konum', 'İlaç', 'Adet', 'Son Kullanma'];
+        const rows = [header];
+        const sorted = [...this.inventory].sort((a, b) => {
+            const locCompare = this.getLocationDisplayName(a.location).localeCompare(this.getLocationDisplayName(b.location), 'tr', { sensitivity: 'base' });
+            if (locCompare !== 0) return locCompare;
+            return (a.name || '').localeCompare(b.name || '', 'tr', { sensitivity: 'base' });
+        });
+        sorted.forEach((item) => {
+            rows.push([
+                this.getLocationDisplayName(item.location),
+                item.name,
+                String(item.quantity),
+                item.expirationDate ? this.formatDate(item.expirationDate) : ''
+            ]);
+        });
+        const csvContent = rows.map((row) => row.map((value) => {
+            const safe = (value ?? '').toString().replace(/"/g, '""');
+            return `"${safe}"`;
+        }).join(';')).join('\n');
+        const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ilac-envanteri-${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        this.showNotification('📤 Envanter Excel uyumlu formatta dışa aktarıldı.', 'success');
     }
 
     updateDataStatus() {

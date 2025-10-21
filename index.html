@@ -31,7 +31,6 @@
                         <option value="oda">Oda</option>
                         <option value="arac">Araç</option>
                         <option value="nakil">Nakil Ambulansı</option>
-                        <option value="ev">Ev</option>
                     </select>
                     <input type="text" id="searchBox" placeholder="İlaç ara...">
                     <button id="exportBtn">📤 Dışa Aktar</button>
@@ -52,25 +51,21 @@
                         <option value="oda">Oda</option>
                         <option value="arac">Araç</option>
                         <option value="nakil">Nakil Ambulansı</option>
-                        <option value="ev">Ev</option>
                     </select>
                     <button type="submit">Envantere Ekle</button>
                 </form>
             </div>
-            
-            <div class="stats-cards">
-                <div class="stat-card">
-                    <h3>Toplam Adet</h3>
-                    <span id="totalItems">0</span>
-                </div>
-                <div class="stat-card expiring">
-                    <h3>Yakında Sonlanacak</h3>
-                    <span id="expiringSoon">0</span>
-                </div>
-                <div class="stat-card expired">
-                    <h3>Süresi Dolmuş</h3>
-                    <span id="expiredItems">0</span>
-                </div>
+
+            <div class="expiration-filters">
+                <button type="button" class="exp-filter-btn" data-filter="30">
+                    1 Ay İçinde (<span id="expiring30Count">0</span>)
+                </button>
+                <button type="button" class="exp-filter-btn" data-filter="90">
+                    3 Ay İçinde (<span id="expiring90Count">0</span>)
+                </button>
+                <button type="button" class="exp-filter-btn" data-filter="expired">
+                    Süresi Dolmuş (<span id="expiredCount">0</span>)
+                </button>
             </div>
 
             <div id="inventoryList" class="inventory-list">
@@ -175,8 +170,22 @@
         </div>
         <div id="itemDetails" class="details-content"></div>
         <div class="details-actions">
+            <button id="consumeItemBtn" class="action-btn consume-btn">🩺 Kullanılan</button>
             <button id="editItemBtn" class="action-btn edit-btn">✏️ Düzenle</button>
             <button id="deleteItemBtn" class="action-btn delete-btn">🗑️ Sil</button>
+        </div>
+        <div id="consumeFormWrapper" class="consume-form hidden">
+            <h4>Kullanım Kaydı</h4>
+            <form id="consumeForm">
+                <label for="consumeQuantity">Miktar</label>
+                <input type="number" id="consumeQuantity" name="consumeQuantity" min="1" value="1" required>
+                <label for="consumeNote">Açıklama (opsiyonel)</label>
+                <textarea id="consumeNote" name="consumeNote" rows="3" placeholder="Örn: Hasta kullanımı, miat kontrolü..."></textarea>
+                <div class="consume-actions">
+                    <button type="submit" class="consume-submit">Düş</button>
+                    <button type="button" id="cancelConsumeBtn" class="consume-cancel">İptal</button>
+                </div>
+            </form>
         </div>
     </div>
 
