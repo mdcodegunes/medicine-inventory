@@ -98,7 +98,6 @@ class MedicineInventory {
             'store': 'oda',
             'car1': 'arac',
             'car2': 'nakil',
-            'home': 'oda',
         };
         this.normalizeLocalData();
     this.refreshCatalogFromInventory();
@@ -1640,11 +1639,10 @@ class MedicineInventory {
             'oda': 'Oda',
             'arac': 'Araç',
             'nakil': 'Nakil Ambulansı',
-            'ev': 'Ev',
             'store': 'Oda',
             'car1': 'Araç',
             'car2': 'Nakil Ambulansı',
-            'home': 'Ev'
+            'home': 'Oda'
         };
         return displayNames[location] || location;
     }
@@ -1949,7 +1947,14 @@ class MedicineInventory {
     }
 
     formatDate(dateString) {
-        return new Date(dateString).toLocaleDateString('tr-TR');
+        if (!dateString) return '';
+        const date = new Date(dateString);
+        if (Number.isNaN(date.getTime())) return '';
+        return date.toLocaleDateString('tr-TR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric'
+        });
     }
 
     showNotification(message, type = 'info') {
@@ -2094,7 +2099,7 @@ class MedicineInventory {
                           }
                         : {
                             inventory: [],
-                            locations: this.locations || ['oda','arac','nakil','ev'],
+                            locations: this.locations || ['oda','arac','nakil'],
                             transfers: [],
                                                         medicineCatalog: this.medicineCatalog,
                                                         medicineCatalogCustom: this.customCatalog,
@@ -2368,7 +2373,7 @@ class MedicineInventory {
             this.showNotification('Dışa aktarılacak envanter kaydı bulunamadı.', 'error');
             return;
         }
-        const header = ['Konum', 'İlaç', 'Adet', 'Son Kullanma'];
+    const header = ['İlaç', 'Adet', 'Son Kullanma Tarihi', 'Konum'];
         const rows = [header];
         const sorted = [...this.inventory].sort((a, b) => {
             const locCompare = this.getLocationDisplayName(a.location).localeCompare(this.getLocationDisplayName(b.location), 'tr', { sensitivity: 'base' });
@@ -2377,10 +2382,10 @@ class MedicineInventory {
         });
         sorted.forEach((item) => {
             rows.push([
-                this.getLocationDisplayName(item.location),
                 item.name,
                 String(item.quantity),
-                item.expirationDate ? this.formatDate(item.expirationDate) : ''
+                item.expirationDate ? this.formatDate(item.expirationDate) : '',
+                this.getLocationDisplayName(item.location)
             ]);
         });
         const csvContent = rows.map((row) => row.map((value) => {

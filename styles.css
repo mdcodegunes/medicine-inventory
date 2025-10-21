@@ -410,6 +410,12 @@ nav {
     flex-wrap: wrap;
 }
 
+.export-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 .filters select,
 .filters input {
     padding: 8px 12px;
@@ -418,18 +424,29 @@ nav {
     font-size: 14px;
 }
 
-#exportBtn {
+.export-actions button {
     padding: 8px 15px;
     border: none;
     border-radius: 6px;
-    background: #28a745;
-    color: white;
+    color: #fff;
     cursor: pointer;
     transition: all 0.3s ease;
 }
 
+#exportBtn {
+    background: #28a745;
+}
+
 #exportBtn:hover {
     background: #218838;
+}
+
+#exportExcelBtn {
+    background: #17a2b8;
+}
+
+#exportExcelBtn:hover {
+    background: #148296;
 }
 
 .expiration-filters {
@@ -471,6 +488,44 @@ nav {
 .inventory-list {
     display: grid;
     gap: 15px;
+}
+
+.section-hint {
+    font-size: 14px;
+    color: #6c757d;
+    margin-bottom: 18px;
+}
+
+.activity-list {
+    display: grid;
+    gap: 12px;
+}
+
+.activity-item {
+    padding: 14px 16px;
+    border-radius: 10px;
+    border: 1px solid #e9ecef;
+    background: #f8f9ff;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.activity-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 15px;
+}
+
+.activity-time {
+    color: #6c757d;
+    font-size: 13px;
+}
+
+.activity-meta {
+    font-size: 14px;
+    color: #495057;
 }
 
 .inventory-item {

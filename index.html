@@ -15,6 +15,7 @@
                 <button id="addItemBtn" type="button" class="nav-btn add-btn">➕ İlaç Ekle</button>
                 <button id="inventoryBtn" type="button" class="nav-btn active" onclick="window.medicineApp && window.medicineApp.showSection('inventory')">📋 Envanter</button>
                 <button id="transferBtn" type="button" class="nav-btn" onclick="window.medicineApp && window.medicineApp.showSection('transfer')">🔄 Transfer</button>
+                <button id="activityBtn" type="button" class="nav-btn" onclick="window.medicineApp && window.medicineApp.showSection('activity')">📝 Hareketler</button>
                 <button id="settingsBtn" type="button" class="nav-btn" onclick="window.medicineApp && window.medicineApp.showSection('settings')">⚙️ Ayarlar</button>
             </nav>
             <div class="header-meta">
@@ -36,7 +37,10 @@
                         <option value="nakil">Nakil Ambulansı</option>
                     </select>
                     <input type="text" id="searchBox" placeholder="İlaç ara...">
-                    <button id="exportBtn">📤 Dışa Aktar</button>
+                    <div class="export-actions">
+                        <button id="exportBtn" type="button">📤 JSON Dışa Aktar</button>
+                        <button id="exportExcelBtn" type="button">📊 Excele Aktar</button>
+                    </div>
                 </div>
             </div>
 
@@ -51,7 +55,7 @@
                     <input type="text" id="medicineName" name="medicineName" placeholder="İlaç Adı" list="medicineNameSuggestions" required>
                     <datalist id="medicineNameSuggestions"></datalist>
                     <input type="number" id="quantity" name="quantity" placeholder="Adet" min="1" required>
-                    <input type="date" id="expirationDate" name="expirationDate" placeholder="Son Kullanma Tarihi (opsiyonel)">
+                    <input type="date" id="expirationDate" name="expirationDate" placeholder="Son Kullanma Tarihi" title="Son Kullanma Tarihi">
                     <select id="location" name="location" required>
                         <option value="">Konum Seçin</option>
                         <option value="oda">Oda</option>
@@ -114,6 +118,15 @@
                 <div id="transferList">
                     <!-- Transfer geçmişi buraya gelecek -->
                 </div>
+            </div>
+        </section>
+
+        <!-- Activity Section -->
+        <section id="activitySection" class="section hidden">
+            <h2>Hareketler</h2>
+            <p class="section-hint">Son ekleme, transfer ve kullanım kayıtlarını burada görebilirsiniz.</p>
+            <div id="activityList" class="activity-list">
+                <!-- Activity entries render here -->
             </div>
         </section>
 
