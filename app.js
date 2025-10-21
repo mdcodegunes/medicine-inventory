@@ -7,7 +7,7 @@ class MedicineInventory {
         this.settings = JSON.parse(localStorage.getItem('settings')) || {
             expirationAlert: 30
         };
-        this.appVersion = '1.0.1';
+        this.appVersion = '1.0.2';
 
     this.defaultMedicineCatalog = [
             'Adrenalin amp 1 mg',
@@ -72,14 +72,25 @@ class MedicineInventory {
             '%5 dekstroz 150 cc',
             '%5 dekstroz 500 cc'
         ];
-        const storedCatalog = JSON.parse(localStorage.getItem('medicineCatalog')) || [];
-        const customCatalog = (storedCatalog || []).filter((name) => {
-            if (typeof name !== 'string') return false;
-            const normalized = name.trim().toLowerCase();
-            if (!normalized) return false;
-            return !this.defaultMedicineCatalog.some((def) => def.toLowerCase() === normalized);
-        });
-        this.medicineCatalog = this.buildMedicineCatalog(customCatalog);
+        let storedCustom = [];
+        try {
+            storedCustom = JSON.parse(localStorage.getItem('medicineCatalogCustom')) || [];
+        } catch {}
+        let legacyCustom = [];
+        if (!localStorage.getItem('medicineCatalogCustom')) {
+            try {
+                const legacyCatalog = JSON.parse(localStorage.getItem('medicineCatalog')) || [];
+                legacyCustom = (legacyCatalog || []).filter((name) => {
+                    if (typeof name !== 'string') return false;
+                    const normalized = name.trim().toLowerCase();
+                    if (!normalized) return false;
+                    if (this.defaultMedicineCatalog.some((def) => def.toLowerCase() === normalized)) return false;
+                    return (this.inventory || []).some((item) => item?.name && item.name.toLowerCase() === normalized);
+                });
+            } catch {}
+        }
+        this.customCatalog = this.sanitizeCustomCatalog(storedCustom.length ? storedCustom : legacyCustom);
+        this.medicineCatalog = this.buildMedicineCatalog(this.customCatalog);
         const storedUsage = JSON.parse(localStorage.getItem('medicineCatalogUsage')) || {};
         this.catalogUsage = this.normalizeCatalogUsage(storedUsage);
 
@@ -91,7 +102,7 @@ class MedicineInventory {
         };
         this.normalizeLocalData();
     this.refreshCatalogFromInventory();
-        this.persistMedicineCatalog();
+        this.saveCatalogState();
     this.persistCatalogUsage();
 
     this.expirationFilter = null;
@@ -363,6 +374,37 @@ class MedicineInventory {
         return Array.from(uniqueMap.values()).sort((a, b) => a.localeCompare(b, 'tr', { sensitivity: 'base' }));
     }
 
+    isDefaultCatalogName(name) {
+        const trimmed = (name || '').trim();
+        if (!trimmed) return false;
+        return (this.defaultMedicineCatalog || []).some((def) => def.toLowerCase() === trimmed.toLowerCase());
+    }
+
+    sanitizeCustomCatalog(entries = []) {
+        const unique = new Map();
+        (entries || []).forEach((entry) => {
+            if (typeof entry !== 'string') return;
+            const trimmed = entry.trim();
+            if (!trimmed || this.isDefaultCatalogName(trimmed)) return;
+            const key = trimmed.toLowerCase();
+            if (!unique.has(key)) unique.set(key, trimmed);
+        });
+        return Array.from(unique.values()).sort((a, b) => a.localeCompare(b, 'tr', { sensitivity: 'base' }));
+    }
+
+    persistCustomCatalog() {
+        try {
+            localStorage.setItem('medicineCatalogCustom', JSON.stringify(this.customCatalog || []));
+        } catch {}
+    }
+
+    saveCatalogState() {
+        this.customCatalog = this.sanitizeCustomCatalog(this.customCatalog || []);
+        this.medicineCatalog = this.buildMedicineCatalog(this.customCatalog);
+        this.persistCustomCatalog();
+        this.persistMedicineCatalog();
+    }
+
     refreshCatalogFromInventory() {
         this.renderCatalogList();
         this.populateMedicineSuggestions();
@@ -549,8 +591,10 @@ class MedicineInventory {
         const exists = (this.medicineCatalog || []).some(item => item.toLowerCase() === trimmed.toLowerCase());
         this.touchCatalogEntry(trimmed);
         if (!exists) {
-            this.medicineCatalog = this.buildMedicineCatalog([...(this.medicineCatalog || []), trimmed]);
-            this.persistMedicineCatalog();
+            if (!this.isDefaultCatalogName(trimmed)) {
+                this.customCatalog = this.sanitizeCustomCatalog([...(this.customCatalog || []), trimmed]);
+            }
+            this.saveCatalogState();
         } else {
             this.persistCatalogUsage();
         }
@@ -575,18 +619,25 @@ class MedicineInventory {
     removeCatalogEntry(name) {
         const trimmed = (name || '').trim();
         if (!trimmed) return;
+        if (this.isDefaultCatalogName(trimmed)) {
+            this.showNotification('Varsayılan katalog öğeleri kaldırılamaz.', 'error');
+            return;
+        }
         const inInventory = (this.inventory || []).some(item => item.name && item.name.toLowerCase() === trimmed.toLowerCase());
         if (inInventory) {
             this.showNotification('Bu ilaç hali hazırda envanterde bulunduğu için katalogdan kaldırılamaz.', 'error');
             return;
         }
-        const beforeLength = (this.medicineCatalog || []).length;
-        this.medicineCatalog = (this.medicineCatalog || []).filter(item => item.toLowerCase() !== trimmed.toLowerCase());
+        const beforeLength = (this.customCatalog || []).length;
+        this.customCatalog = (this.customCatalog || []).filter(item => item.toLowerCase() !== trimmed.toLowerCase());
+        if (beforeLength === this.customCatalog.length) {
+            this.showNotification(`${trimmed} zaten katalogda bulunmuyor.`, 'info');
+            return;
+        }
         if (this.catalogUsage && this.catalogUsage[trimmed.toLowerCase()]) {
             delete this.catalogUsage[trimmed.toLowerCase()];
         }
-        if (beforeLength === this.medicineCatalog.length) return;
-        this.persistMedicineCatalog();
+        this.saveCatalogState();
         this.persistCatalogUsage();
         this.populateMedicineSuggestions();
         this.renderCatalogList();
@@ -1749,11 +1800,16 @@ class MedicineInventory {
                     this.locations = data.locations || ['oda', 'arac', 'nakil'];
                     this.transfers = data.transfers || [];
                     this.settings = data.settings || { expirationAlert: 30 };
-                    this.medicineCatalog = this.buildMedicineCatalog(data.medicineCatalog || this.medicineCatalog || []);
+                    const importedCustom = Array.isArray(data.medicineCatalogCustom)
+                        ? data.medicineCatalogCustom
+                        : Array.isArray(data.medicineCatalog)
+                            ? data.medicineCatalog
+                            : [];
+                    this.customCatalog = this.sanitizeCustomCatalog(importedCustom);
+                    this.saveCatalogState();
                     this.catalogUsage = this.normalizeCatalogUsage(data.medicineCatalogUsage || this.catalogUsage || {});
                     this.normalizeLocalData();
                     this.refreshCatalogFromInventory();
-                    this.persistMedicineCatalog();
                     this.persistCatalogUsage();
                     
                     this.saveData();
@@ -1789,15 +1845,17 @@ class MedicineInventory {
                 localStorage.removeItem('settings');
                 localStorage.removeItem('medicineCatalog');
                 localStorage.removeItem('medicineCatalogUsage');
+                localStorage.removeItem('medicineCatalogCustom');
                 
                 this.inventory = [];
                 this.locations = ['oda', 'arac', 'nakil'];
                 this.transfers = [];
                 this.settings = { expirationAlert: 30 };
+                this.customCatalog = [];
                 this.medicineCatalog = [...this.defaultMedicineCatalog];
                 this.catalogUsage = {};
                 this.normalizeLocalData();
-                this.persistMedicineCatalog();
+                this.saveCatalogState();
                 this.persistCatalogUsage();
                 
                 this.updateInventoryDisplay();
@@ -1838,7 +1896,7 @@ class MedicineInventory {
         localStorage.setItem('locations', JSON.stringify(this.locations));
         localStorage.setItem('transfers', JSON.stringify(this.transfers));
         localStorage.setItem('settings', JSON.stringify(this.settings));
-        this.persistMedicineCatalog();
+    this.saveCatalogState();
         this.persistCatalogUsage();
         this.updateDataStatus();
         // Push to cloud (debounced) if enabled
@@ -1992,15 +2050,12 @@ class MedicineInventory {
                     if (!(this.inventory?.length) && Array.isArray(data.inventory)) this.inventory = data.inventory;
                     if (!(this.locations?.length) && Array.isArray(data.locations)) this.locations = data.locations;
                     if (!(this.transfers?.length) && Array.isArray(data.transfers)) this.transfers = data.transfers;
-                    if (Array.isArray(data.medicineCatalog) && !(this.medicineCatalog && this.medicineCatalog.length)) {
-                        this.medicineCatalog = this.buildMedicineCatalog(data.medicineCatalog);
-                    }
                     if (data.medicineCatalogUsage) {
                         this.catalogUsage = this.mergeCatalogUsage(data.medicineCatalogUsage, this.catalogUsage);
                     }
                     this.normalizeLocalData();
                     this.refreshCatalogFromInventory();
-                    this.persistMedicineCatalog();
+                    this.saveCatalogState();
                     this.persistCatalogUsage();
                     this.updateInventoryDisplay();
                     this.updateStats();
@@ -2027,12 +2082,13 @@ class MedicineInventory {
             this.cloud.unsub = docRef.onSnapshot(async (snap) => {
                 if (!snap.exists) {
                     const seedPayload = (this.inventory?.length || this.locations?.length || this.transfers?.length)
-                        ? {
-                            inventory: this.inventory,
-                            locations: this.locations,
-                            transfers: this.transfers,
-                            medicineCatalog: this.medicineCatalog,
-                                                        medicineCatalogUsage: this.catalogUsage,
+                                                ? {
+                                                        inventory: this.inventory,
+                                                        locations: this.locations,
+                                                        transfers: this.transfers,
+                                                        medicineCatalog: this.medicineCatalog,
+                                                        medicineCatalogCustom: this.customCatalog,
+                                                                                                                medicineCatalogUsage: this.catalogUsage,
                             __lastWriter: this.cloud.clientId,
                             __updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                           }
@@ -2040,8 +2096,9 @@ class MedicineInventory {
                             inventory: [],
                             locations: this.locations || ['oda','arac','nakil','ev'],
                             transfers: [],
-                            medicineCatalog: this.medicineCatalog,
-                                                        medicineCatalogUsage: this.catalogUsage,
+                                                        medicineCatalog: this.medicineCatalog,
+                                                        medicineCatalogCustom: this.customCatalog,
+                                                                                                                medicineCatalogUsage: this.catalogUsage,
                             __lastWriter: this.cloud.clientId,
                             __updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                           };
@@ -2083,9 +2140,6 @@ class MedicineInventory {
                             ? this.mergeByIdArray(data.transfers, this.transfers)
                             : data.transfers;
                     }
-                    if (Array.isArray(data.medicineCatalog) && !(this.medicineCatalog && this.medicineCatalog.length)) {
-                        this.medicineCatalog = this.buildMedicineCatalog(data.medicineCatalog);
-                    }
                     if (data.medicineCatalogUsage) {
                         this.catalogUsage = this.mergeCatalogUsage(data.medicineCatalogUsage, this.catalogUsage);
                     }
@@ -2094,7 +2148,7 @@ class MedicineInventory {
                 }
                 this.normalizeLocalData();
                 this.refreshCatalogFromInventory();
-                this.persistMedicineCatalog();
+                this.saveCatalogState();
                 this.persistCatalogUsage();
                 try {
                     const remoteIds = new Set((data.inventory || []).map(i => i && i.id).filter(Boolean));
@@ -2145,6 +2199,7 @@ class MedicineInventory {
                         locations: this.locations,
                         transfers: this.transfers,
                         medicineCatalog: this.medicineCatalog,
+                        medicineCatalogCustom: this.customCatalog,
                         medicineCatalogUsage: this.catalogUsage,
                         __lastWriter: this.cloud.clientId,
                         __updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -2287,6 +2342,7 @@ class MedicineInventory {
             transfers: this.transfers,
             activityLog: this.activityLog,
             medicineCatalog: this.medicineCatalog,
+            medicineCatalogCustom: this.customCatalog,
             medicineCatalogUsage: this.catalogUsage,
             settings: this.settings,
             exportDate: new Date().toISOString(),
