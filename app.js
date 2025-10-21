@@ -334,8 +334,15 @@ class MedicineInventory {
 
     buildMedicineCatalog(extra = []) {
         const uniqueMap = new Map();
-        [...(this.defaultMedicineCatalog || []), ...(extra || [])].forEach((name) => {
-            const trimmed = (name || '').trim();
+        const source = [...(this.defaultMedicineCatalog || []), ...(extra || [])];
+        source.forEach((entry) => {
+            let candidate = '';
+            if (typeof entry === 'string') {
+                candidate = entry;
+            } else if (entry && typeof entry.name === 'string') {
+                candidate = entry.name;
+            }
+            const trimmed = candidate.trim();
             if (!trimmed) return;
             const key = trimmed.toLowerCase();
             if (!uniqueMap.has(key)) uniqueMap.set(key, trimmed);
@@ -2370,6 +2377,7 @@ class MedicineInventory {
             background = 'rgba(240,173,78,0.85)';
         }
         statusElement.style.background = background;
+        this.renderAppVersion();
     }
 
     // Auto-backup removed
