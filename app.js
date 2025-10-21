@@ -7,6 +7,7 @@ class MedicineInventory {
         this.settings = JSON.parse(localStorage.getItem('settings')) || {
             expirationAlert: 30
         };
+        this.appVersion = '1.0.0';
 
     this.defaultMedicineCatalog = [
             'Adrenalin amp 1 mg',
@@ -191,6 +192,7 @@ class MedicineInventory {
         this.displayLocations();
     this.displayActivityLog();
         this.updateDataStatus();
+        this.renderAppVersion();
         this.populateMedicineSuggestions();
         this.renderCatalogList();
         // Auto-backup removed
@@ -2271,7 +2273,7 @@ class MedicineInventory {
             medicineCatalogUsage: this.catalogUsage,
             settings: this.settings,
             exportDate: new Date().toISOString(),
-            appVersion: '1.0.0'
+            appVersion: this.appVersion
         };
         
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -2322,6 +2324,12 @@ class MedicineInventory {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         this.showNotification('📤 Envanter Excel uyumlu formatta dışa aktarıldı.', 'success');
+    }
+
+    renderAppVersion() {
+        const el = document.getElementById('appVersion');
+        if (!el) return;
+        el.textContent = `Sürüm ${this.appVersion}`;
     }
 
     updateDataStatus() {

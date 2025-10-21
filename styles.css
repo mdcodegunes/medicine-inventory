@@ -33,6 +33,15 @@ header h1 {
     font-weight: 300;
 }
 
+.header-meta {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 12px;
+    margin-top: 15px;
+    flex-wrap: wrap;
+}
+
 nav {
     display: flex;
     justify-content: center;
@@ -245,6 +254,15 @@ nav {
     padding: 5px 10px;
     border-radius: 15px;
     font-size: 12px;
+}
+
+.app-version {
+    background: rgba(102, 126, 234, 0.15);
+    color: #5a67d8;
+    padding: 5px 12px;
+    border-radius: 15px;
+    font-size: 12px;
+    font-weight: 600;
 }
 
 .scanner-controls {
@@ -967,6 +985,10 @@ nav {
     
     nav {
         flex-direction: column;
+    }
+
+    .header-meta {
+        justify-content: center;
     }
     
     .nav-btn {
