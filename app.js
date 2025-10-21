@@ -7,7 +7,7 @@ class MedicineInventory {
         this.settings = JSON.parse(localStorage.getItem('settings')) || {
             expirationAlert: 30
         };
-        this.appVersion = '1.0.2';
+        this.appVersion = '1.0.3';
 
     this.defaultMedicineCatalog = [
             'Adrenalin amp 1 mg',
