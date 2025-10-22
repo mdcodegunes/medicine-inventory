@@ -7,9 +7,14 @@ class MedicineInventory {
         this.settings = JSON.parse(localStorage.getItem('settings')) || {
             expirationAlert: 30
         };
-        this.appVersion = '1.0.3';
+        this.appVersion = '1.0.4';
 
     this.defaultMedicineCatalog = [
+            'Aspirasyon Sondası 14',
+            'Aspirasyon Sondası 16',
+            'Aspirasyon Sondası 18',
+            'Aspirasyon Sondası 20',
+            'Aspirasyon Sondası 22',
             'Adrenalin amp 1 mg',
             'Ampisilin + Sulbaktam amp',
             'Asetilsalisilik asit 100 mg',
