@@ -294,6 +294,16 @@ class MedicineInventory {
             btn.addEventListener('click', () => this.handleExpirationFilterClick(btn.dataset.filter || null));
         });
 
+        const missingDefaultsNotice = document.getElementById('missingDefaultsNotice');
+        if (missingDefaultsNotice && !missingDefaultsNotice.dataset.bound) {
+            missingDefaultsNotice.addEventListener('click', () => {
+                const expanded = missingDefaultsNotice.dataset.expanded === 'true';
+                missingDefaultsNotice.dataset.expanded = expanded ? 'false' : 'true';
+                this.renderMissingDefaultsNotice();
+            });
+            missingDefaultsNotice.dataset.bound = 'true';
+        }
+
     // Transfer formu
     const transferForm = document.getElementById('transferForm');
     if (transferForm) transferForm.addEventListener('submit', (e) => this.handleTransfer(e));
@@ -1210,15 +1220,38 @@ class MedicineInventory {
         if (!missing.length) {
             notice.classList.add('hidden');
             notice.textContent = '';
+            notice.dataset.expanded = 'false';
             return;
         }
-        const display = missing.slice(0, 6);
-        const extraCount = missing.length - display.length;
-        let summary = display.join(', ');
-        if (extraCount > 0) {
-            summary += ` ve ${extraCount} diğer ilaç`;
+        const isExpanded = notice.dataset.expanded === 'true';
+        if (missing.length <= 6) {
+            const listItems = missing.map((name) => `<li>${name}</li>`).join('');
+            notice.innerHTML = `
+                <strong>⚠️ Stokta olmayan varsayılan ilaçlar (${missing.length})</strong>
+                <ul>${listItems}</ul>
+            `;
+            notice.dataset.expanded = 'false';
+        } else if (isExpanded) {
+            const listItems = missing.map((name) => `<li>${name}</li>`).join('');
+            notice.innerHTML = `
+                <strong>⚠️ Stokta olmayan varsayılan ilaçlar (${missing.length})</strong>
+                <ul>${listItems}</ul>
+                <span class="missing-defaults-hint">Listeyi gizlemek için tıklayın.</span>
+            `;
+        } else {
+            const display = missing.slice(0, 6);
+            const extraCount = missing.length - display.length;
+            let summary = display.join(', ');
+            if (extraCount > 0) {
+                summary += ` ve ${extraCount} diğer ilaç`;
+            }
+            notice.innerHTML = `
+                <strong>⚠️ Stokta olmayan varsayılan ilaçlar (${missing.length})</strong>
+                ${summary}<br>
+                <span class="missing-defaults-hint">Tam liste için tıklayın.</span>
+            `;
+            notice.dataset.expanded = 'false';
         }
-        notice.textContent = `⚠️ Stokta olmayan varsayılan ilaçlar (${missing.length}): ${summary}`;
         notice.classList.remove('hidden');
     }
 
