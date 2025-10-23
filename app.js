@@ -1112,6 +1112,7 @@ class MedicineInventory {
 
         if (filteredInventory.length === 0) {
             inventoryList.innerHTML = '<div class="no-items">Henüz kayıtlı ilaç yok. ➕ İlaç Ekle butonuyla listenizi oluşturun.</div>';
+            this.renderMissingDefaultsNotice();
             return;
         }
 
@@ -1119,6 +1120,8 @@ class MedicineInventory {
             const itemElement = this.createInventoryItemElement(item);
             inventoryList.appendChild(itemElement);
         });
+
+        this.renderMissingDefaultsNotice();
     }
 
     createInventoryItemElement(item) {
@@ -1186,6 +1189,37 @@ class MedicineInventory {
         if (expiredEl) expiredEl.textContent = expired;
 
         this.updateExpirationFilterButtons();
+    }
+
+    getMissingDefaultMedicines() {
+        const inventoryNames = new Set((this.inventory || []).map((item) => {
+            if (!item?.name) return null;
+            return item.name.trim().toLowerCase();
+        }).filter(Boolean));
+        return (this.defaultMedicineCatalog || []).filter((name) => {
+            const normalized = (name || '').trim().toLowerCase();
+            if (!normalized) return false;
+            return !inventoryNames.has(normalized);
+        });
+    }
+
+    renderMissingDefaultsNotice() {
+        const notice = document.getElementById('missingDefaultsNotice');
+        if (!notice) return;
+        const missing = this.getMissingDefaultMedicines();
+        if (!missing.length) {
+            notice.classList.add('hidden');
+            notice.textContent = '';
+            return;
+        }
+        const display = missing.slice(0, 6);
+        const extraCount = missing.length - display.length;
+        let summary = display.join(', ');
+        if (extraCount > 0) {
+            summary += ` ve ${extraCount} diğer ilaç`;
+        }
+        notice.textContent = `⚠️ Stokta olmayan varsayılan ilaçlar (${missing.length}): ${summary}`;
+        notice.classList.remove('hidden');
     }
 
     markItemUpdated(item) {
