@@ -85,27 +85,32 @@
                 <button id="summaryToggleBtn" type="button" class="summary-toggle" aria-expanded="false" aria-controls="inventorySummary">📦 Stok Özeti</button>
                 <div id="inventorySummary" class="summary-panel hidden" aria-hidden="true" role="region" aria-labelledby="summaryToggleBtn">
                     <div class="summary-group">
-                        <h3>İlaç Bazında Toplam</h3>
-                        <table class="summary-table">
-                            <thead>
-                                <tr class="summary-head-main">
-                                    <th rowspan="2">İlaç</th>
-                                    <th rowspan="2" class="number">Toplam Adet</th>
-                                    <th colspan="4" class="summary-head-locations">Konum Dağılımı</th>
-                                </tr>
-                                <tr class="summary-head-sub">
-                                    <th class="number">Araç</th>
-                                    <th class="number">Oda</th>
-                                    <th class="number">Nakil</th>
-                                    <th>Diğer</th>
-                                </tr>
-                            </thead>
-                            <tbody id="summaryMedicineBody">
-                                <tr>
-                                    <td colspan="6" class="summary-empty">Envanter bilgisi hesaplanıyor…</td>
-                                </tr>
-                            </tbody>
-                        </table>
+                        <button type="button" class="summary-group-toggle" aria-expanded="true" aria-controls="summaryMedicineSection" data-target="summaryMedicineSection">
+                            <span class="summary-group-title">İlaç Bazında Toplam</span>
+                            <span class="summary-group-icon" aria-hidden="true">▼</span>
+                        </button>
+                        <div id="summaryMedicineSection" class="summary-group-body">
+                            <table class="summary-table">
+                                <thead>
+                                    <tr class="summary-head-main">
+                                        <th rowspan="2">İlaç</th>
+                                        <th rowspan="2" class="number">Toplam Adet</th>
+                                        <th colspan="4" class="summary-head-locations">Konum Dağılımı</th>
+                                    </tr>
+                                    <tr class="summary-head-sub">
+                                        <th class="number summary-arac">Araç</th>
+                                        <th class="number summary-oda">Oda</th>
+                                        <th class="number summary-nakil">Nakil</th>
+                                        <th class="summary-other">Diğer</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="summaryMedicineBody">
+                                    <tr>
+                                        <td colspan="6" class="summary-empty">Envanter bilgisi hesaplanıyor…</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>

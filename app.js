@@ -340,6 +340,22 @@ class MedicineInventory {
             summaryToggle.dataset.bound = 'true';
         }
 
+        const summaryGroupToggles = document.querySelectorAll('.summary-group-toggle');
+        summaryGroupToggles.forEach((btn) => {
+            if (!btn || btn.dataset.bound) return;
+            btn.addEventListener('click', () => {
+                const targetId = btn.dataset.target || btn.getAttribute('aria-controls');
+                if (!targetId) return;
+                const section = document.getElementById(targetId);
+                if (!section) return;
+                const willShow = section.classList.contains('hidden');
+                section.classList.toggle('hidden');
+                btn.setAttribute('aria-expanded', willShow ? 'true' : 'false');
+                btn.classList.toggle('collapsed', !willShow);
+            });
+            btn.dataset.bound = 'true';
+        });
+
     // Transfer formu
     const transferForm = document.getElementById('transferForm');
     if (transferForm) transferForm.addEventListener('submit', (e) => this.handleTransfer(e));
@@ -1396,9 +1412,11 @@ class MedicineInventory {
             .map((entry) => {
                 const locationCells = keyLocations.map((loc) => {
                     const qty = entry.perLocation.get(loc) || 0;
-                    if (!qty) return '<td class="number summary-loc empty">—</td>';
                     const styles = this.getLocationColorStyles(loc);
-                    return `<td class="number summary-loc" style="--location-bg:${styles.bg}; --location-text:${styles.text};">${qty}</td>`;
+                    const classes = ['number', 'summary-loc', `summary-${loc}`];
+                    if (!qty) classes.push('empty');
+                    const content = qty ? qty : '—';
+                    return `<td class="${classes.join(' ')}" style="--location-bg:${styles.bg}; --location-text:${styles.text};">${content}</td>`;
                 });
 
                 const otherEntries = Array.from(entry.perLocation.entries())
