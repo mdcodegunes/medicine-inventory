@@ -1387,7 +1387,7 @@ class MedicineInventory {
             entry.perLocation.set(locKey, current + qty);
         });
 
-        const keyLocations = ['oda', 'arac', 'nakil'];
+    const keyLocations = ['arac', 'oda', 'nakil'];
         const medicineRows = Array.from(medicineMap.values())
             .sort((a, b) => {
                 if (b.total !== a.total) return b.total - a.total;

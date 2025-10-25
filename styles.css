@@ -581,7 +581,7 @@ nav {
 }
 
 .summary-head-sub th:last-child {
-    text-align: center;
+    text-align: left;
 }
 
 .summary-table th,
@@ -601,28 +601,14 @@ nav {
 }
 
 .summary-loc {
-    position: relative;
-    text-align: center;
+    text-align: right;
     font-weight: 600;
     border-left: 1px solid #edf2f7;
-    border-right: 1px solid #edf2f7;
-    background: rgba(102, 126, 234, 0.05);
-}
-
-.summary-loc:not(.empty)::before {
-    content: '';
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--location-bg, #667eea);
-    box-shadow: 0 0 0 2px rgba(255,255,255,0.8);
+    background: transparent;
 }
 
 .summary-loc.empty {
-    color: #cbd5f5;
+    color: #a3b3d4;
     font-weight: normal;
 }
 
