@@ -304,6 +304,20 @@ class MedicineInventory {
             missingDefaultsNotice.dataset.bound = 'true';
         }
 
+        const summaryToggle = document.getElementById('summaryToggleBtn');
+        if (summaryToggle && !summaryToggle.dataset.bound) {
+            summaryToggle.addEventListener('click', () => {
+                this.renderInventorySummary();
+                const panel = document.getElementById('inventorySummary');
+                if (!panel) return;
+                const willShow = panel.classList.contains('hidden');
+                panel.classList.toggle('hidden');
+                summaryToggle.setAttribute('aria-expanded', willShow ? 'true' : 'false');
+                panel.setAttribute('aria-hidden', willShow ? 'false' : 'true');
+            });
+            summaryToggle.dataset.bound = 'true';
+        }
+
     // Transfer formu
     const transferForm = document.getElementById('transferForm');
     if (transferForm) transferForm.addEventListener('submit', (e) => this.handleTransfer(e));
@@ -1123,6 +1137,7 @@ class MedicineInventory {
         if (filteredInventory.length === 0) {
             inventoryList.innerHTML = '<div class="no-items">Henüz kayıtlı ilaç yok. ➕ İlaç Ekle butonuyla listenizi oluşturun.</div>';
             this.renderMissingDefaultsNotice();
+            this.renderInventorySummary();
             return;
         }
 
@@ -1132,6 +1147,7 @@ class MedicineInventory {
         });
 
         this.renderMissingDefaultsNotice();
+        this.renderInventorySummary();
     }
 
     createInventoryItemElement(item) {
@@ -1253,6 +1269,130 @@ class MedicineInventory {
             notice.dataset.expanded = 'false';
         }
         notice.classList.remove('hidden');
+    }
+
+    renderInventorySummary() {
+        const panel = document.getElementById('inventorySummary');
+        const summaryToggle = document.getElementById('summaryToggleBtn');
+        const medicineBody = document.getElementById('summaryMedicineBody');
+        const locationBody = document.getElementById('summaryLocationBody');
+        if (!panel || !summaryToggle || !medicineBody || !locationBody) return;
+
+        const inventory = Array.isArray(this.inventory) ? this.inventory : [];
+        const totalQuantity = inventory.reduce((sum, item) => {
+            const qty = Number(item?.quantity);
+            return sum + (Number.isFinite(qty) && qty > 0 ? qty : 0);
+        }, 0);
+        const uniqueMedicines = new Set(
+            inventory
+                .filter((item) => {
+                    const qty = Number(item?.quantity);
+                    return Number.isFinite(qty) && qty > 0;
+                })
+                .map((item) => (item?.name || '').trim().toLowerCase())
+                .filter(Boolean)
+        ).size;
+        const toggleLabel = `📦 Stok Özeti (${totalQuantity} adet, ${uniqueMedicines || 0} ilaç)`;
+        summaryToggle.textContent = toggleLabel;
+
+        const isVisible = !panel.classList.contains('hidden');
+        summaryToggle.setAttribute('aria-expanded', isVisible ? 'true' : 'false');
+        panel.setAttribute('aria-hidden', isVisible ? 'false' : 'true');
+
+        if (!inventory.length) {
+            medicineBody.innerHTML = '<tr><td colspan="3" class="summary-empty">Envanter boş.</td></tr>';
+            locationBody.innerHTML = '<tr><td colspan="3" class="summary-empty">Envanter boş.</td></tr>';
+            return;
+        }
+
+        const medicineMap = new Map();
+        inventory.forEach((item) => {
+            const rawName = (item?.name || '').trim();
+            if (!rawName) return;
+            const key = rawName.toLowerCase();
+            const qty = Number(item?.quantity);
+            if (!Number.isFinite(qty) || qty <= 0) return;
+            if (!medicineMap.has(key)) {
+                medicineMap.set(key, {
+                    name: rawName,
+                    total: 0,
+                    perLocation: new Map()
+                });
+            }
+            const entry = medicineMap.get(key);
+            if (entry.total === 0) entry.name = rawName;
+            entry.total += qty;
+            const locKey = item?.location || '';
+            const current = entry.perLocation.get(locKey) || 0;
+            entry.perLocation.set(locKey, current + qty);
+        });
+
+        const medicineRows = Array.from(medicineMap.values())
+            .sort((a, b) => {
+                if (b.total !== a.total) return b.total - a.total;
+                return a.name.localeCompare(b.name, 'tr', { sensitivity: 'base' });
+            })
+            .map((entry) => {
+                const distribution = Array.from(entry.perLocation.entries())
+                    .sort((a, b) => {
+                        const labelA = a[0] ? this.getLocationDisplayName(a[0]) : 'Konum belirtilmedi';
+                        const labelB = b[0] ? this.getLocationDisplayName(b[0]) : 'Konum belirtilmedi';
+                        return labelA.localeCompare(labelB, 'tr', { sensitivity: 'base' });
+                    })
+                    .map(([loc, qty]) => {
+                        const label = loc ? this.getLocationDisplayName(loc) : 'Konum belirtilmedi';
+                        return `${label}: ${qty}`;
+                    })
+                    .join(', ');
+                return `
+                    <tr>
+                        <td>${entry.name}</td>
+                        <td class="number">${entry.total}</td>
+                        <td>${distribution || 'Konum bilgisi yok'}</td>
+                    </tr>
+                `;
+            });
+
+        medicineBody.innerHTML = medicineRows.length
+            ? medicineRows.join('')
+            : '<tr><td colspan="3" class="summary-empty">Envanter boş.</td></tr>';
+
+        const locationMap = new Map();
+        inventory.forEach((item) => {
+            const locKey = item?.location || '';
+            const displayName = locKey ? this.getLocationDisplayName(locKey) : 'Konum belirtilmedi';
+            const qty = Number(item?.quantity);
+            if (!Number.isFinite(qty) || qty <= 0) return;
+            if (!locationMap.has(locKey)) {
+                locationMap.set(locKey, {
+                    key: locKey,
+                    display: displayName,
+                    total: 0,
+                    medicines: new Set()
+                });
+            }
+            const entry = locationMap.get(locKey);
+            entry.total += qty;
+            const normalizedName = (item?.name || '').trim().toLowerCase();
+            if (normalizedName) entry.medicines.add(normalizedName);
+        });
+
+        const locationRows = Array.from(locationMap.values())
+            .sort((a, b) => {
+                if (b.total !== a.total) return b.total - a.total;
+                return a.display.localeCompare(b.display, 'tr', { sensitivity: 'base' });
+            })
+            .map((entry) => `
+                <tr>
+                    <td>${entry.display}</td>
+                    <td class="number">${entry.total}</td>
+                    <td>${entry.medicines.size}</td>
+                </tr>
+            `);
+
+        locationBody.innerHTML = locationRows.length
+            ? locationRows.join('')
+            : '<tr><td colspan="3" class="summary-empty">Envanter boş.</td></tr>';
     }
 
     markItemUpdated(item) {

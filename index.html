@@ -81,6 +81,46 @@
 
             <div id="missingDefaultsNotice" class="missing-defaults hidden"></div>
 
+            <div class="inventory-summary">
+                <button id="summaryToggleBtn" type="button" class="summary-toggle" aria-expanded="false">📦 Stok Özeti</button>
+                <div id="inventorySummary" class="summary-panel hidden" aria-hidden="true">
+                    <div class="summary-group">
+                        <h3>İlaç Bazında Toplam</h3>
+                        <table class="summary-table">
+                            <thead>
+                                <tr>
+                                    <th>İlaç</th>
+                                    <th class="number">Toplam Adet</th>
+                                    <th>Konum Dağılımı</th>
+                                </tr>
+                            </thead>
+                            <tbody id="summaryMedicineBody">
+                                <tr>
+                                    <td colspan="3" class="summary-empty">Envanter bilgisi hesaplanıyor…</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="summary-group">
+                        <h3>Konum Bazında Toplam</h3>
+                        <table class="summary-table">
+                            <thead>
+                                <tr>
+                                    <th>Konum</th>
+                                    <th class="number">Toplam Adet</th>
+                                    <th>İlaç Çeşidi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="summaryLocationBody">
+                                <tr>
+                                    <td colspan="3" class="summary-empty">Envanter bilgisi hesaplanıyor…</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
             <div id="inventoryList" class="inventory-list">
                 <!-- Inventory items will be populated here -->
             </div>
