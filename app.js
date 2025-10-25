@@ -7,7 +7,28 @@ class MedicineInventory {
         this.settings = JSON.parse(localStorage.getItem('settings')) || {
             expirationAlert: 30
         };
+        if (!this.settings.locationColors || typeof this.settings.locationColors !== 'object') {
+            this.settings.locationColors = {};
+        }
         this.appVersion = '1.0.4';
+
+        this.locationColorPalette = [
+            '#6366f1',
+            '#10b981',
+            '#0ea5e9',
+            '#f97316',
+            '#ec4899',
+            '#84cc16',
+            '#8b5cf6',
+            '#14b8a6',
+            '#f59e0b',
+            '#ef4444'
+        ];
+        this.defaultLocationColorMap = {
+            'oda': { bg: '#6366f1', text: '#ffffff' },
+            'arac': { bg: '#0ea5e9', text: '#ffffff' },
+            'nakil': { bg: '#10b981', text: '#ffffff' }
+        };
 
     this.defaultMedicineCatalog = [
             'Aspirasyon Sondası 14',
@@ -105,6 +126,7 @@ class MedicineInventory {
             'car2': 'nakil',
         };
         this.normalizeLocalData();
+        this.prepareLocationColors();
     this.refreshCatalogFromInventory();
         this.saveCatalogState();
     this.persistCatalogUsage();
@@ -307,13 +329,13 @@ class MedicineInventory {
         const summaryToggle = document.getElementById('summaryToggleBtn');
         if (summaryToggle && !summaryToggle.dataset.bound) {
             summaryToggle.addEventListener('click', () => {
-                this.renderInventorySummary();
                 const panel = document.getElementById('inventorySummary');
                 if (!panel) return;
                 const willShow = panel.classList.contains('hidden');
                 panel.classList.toggle('hidden');
                 summaryToggle.setAttribute('aria-expanded', willShow ? 'true' : 'false');
                 panel.setAttribute('aria-hidden', willShow ? 'false' : 'true');
+                this.renderInventorySummary();
             });
             summaryToggle.dataset.bound = 'true';
         }
@@ -906,14 +928,16 @@ class MedicineInventory {
         const destinationStock = destinationItem ? destinationItem.quantity : 0;
         const sourceName = this.getLocationDisplayName(fromLocation);
         const destinationName = toLocation ? this.getLocationDisplayName(toLocation) : null;
+        const sourceBadge = this.renderLocationBadge(fromLocation, sourceName);
+        const destinationBadge = toLocation ? this.renderLocationBadge(toLocation, destinationName) : null;
 
         const lines = [];
         const sourceAfter = Math.max(stock - validQuantity, 0);
-        lines.push(`<div><strong>Kaynak ${sourceName}</strong>: ${stock} → ${sourceAfter}</div>`);
+        lines.push(`<div><strong>Kaynak ${sourceBadge}</strong>: ${stock} → ${sourceAfter}</div>`);
 
         if (destinationName) {
             const destAfter = destinationStock + (validQuantity > 0 ? validQuantity : 0);
-            lines.push(`<div><strong>Hedef ${destinationName}</strong>: ${destinationStock}${validQuantity > 0 ? ` → ${destAfter}` : ''}</div>`);
+            lines.push(`<div><strong>Hedef ${destinationBadge}</strong>: ${destinationStock}${validQuantity > 0 ? ` → ${destAfter}` : ''}</div>`);
         } else {
             lines.push('<div>Hedef konumu seçilmedi.</div>');
         }
@@ -1197,12 +1221,15 @@ class MedicineInventory {
             div.classList.add('expiring');
         }
 
+        const { bg, text } = this.getLocationColorStyles(item.location);
+        const locationStyle = `style="--location-bg:${bg}; --location-text:${text};"`;
+
         div.innerHTML = `
             <div class="item-info">
                 <h4>${item.name}</h4>
                 ${item.expirationDate ? `<p><strong>Son Kullanma:</strong> ${this.formatDate(item.expirationDate)} ${this.getExpirationStatus(daysUntilExpiration)}</p>` : ''}
             </div>
-            <div class="item-location">${this.getLocationDisplayName(item.location)}</div>
+            <div class="item-location" ${locationStyle}>${this.getLocationDisplayName(item.location)}</div>
             <div class="item-quantity">${item.quantity}</div>
         `;
 
@@ -1373,10 +1400,10 @@ class MedicineInventory {
                         return labelA.localeCompare(labelB, 'tr', { sensitivity: 'base' });
                     })
                     .map(([loc, qty]) => {
-                        const label = loc ? this.getLocationDisplayName(loc) : 'Konum belirtilmedi';
-                        return `${label}: ${qty}`;
+                        const badge = this.renderLocationBadge(loc);
+                        return `${badge} <span class="location-qty">(${qty})</span>`;
                     })
-                    .join(', ');
+                    .join(' ');
                 return `
                     <tr>
                         <td>${entry.name}</td>
@@ -1736,10 +1763,12 @@ class MedicineInventory {
         this.transfers.slice(0, 10).forEach(transfer => {
             const div = document.createElement('div');
             div.className = 'transfer-item';
+            const fromBadge = this.renderLocationBadge(transfer.fromLocation);
+            const toBadge = this.renderLocationBadge(transfer.toLocation);
             div.innerHTML = `
                 <div class="transfer-info">
                     <strong>${transfer.medicineName}</strong> (${transfer.quantity})<br>
-                    <small>${this.getLocationDisplayName(transfer.fromLocation)} → ${this.getLocationDisplayName(transfer.toLocation)}</small>
+                    <small>${fromBadge} → ${toBadge}</small>
                 </div>
                 <div class="transfer-date">
                     ${this.formatDate(transfer.date)}
@@ -1855,6 +1884,110 @@ class MedicineInventory {
         return displayNames[location] || location;
     }
 
+    prepareLocationColors() {
+        this.settings.locationColors = this.settings.locationColors || {};
+        (this.locations || []).forEach((location) => this.ensureLocationColor(location));
+    }
+
+    ensureLocationColor(location) {
+        if (!location) {
+            return { bg: '#94a3b8', text: '#ffffff' };
+        }
+        this.settings.locationColors = this.settings.locationColors || {};
+        const existing = this.settings.locationColors[location];
+        if (existing && existing.bg) {
+            if (!existing.text) existing.text = this.getContrastingTextColor(existing.bg);
+            return existing;
+        }
+        const defaultEntry = this.defaultLocationColorMap[location];
+        const bg = defaultEntry?.bg || this.pickLocationColor(location);
+        const text = defaultEntry?.text || this.getContrastingTextColor(bg);
+        const entry = { bg, text };
+        this.settings.locationColors[location] = entry;
+        return entry;
+    }
+
+    pickLocationColor(location) {
+        const usedColors = new Set(
+            Object.values(this.settings.locationColors || {})
+                .map((entry) => entry?.bg)
+                .filter(Boolean)
+        );
+        const paletteColor = this.locationColorPalette.find((color) => !usedColors.has(color));
+        if (paletteColor) return paletteColor;
+        return this.generateColorFromString(location);
+    }
+
+    generateColorFromString(value) {
+        if (!value) return '#6366f1';
+        let hash = 0;
+        for (let i = 0; i < value.length; i++) {
+            hash = value.charCodeAt(i) + ((hash << 5) - hash);
+            hash |= 0; // Convert to 32bit integer
+        }
+        const hue = Math.abs(hash) % 360;
+        return this.hslToHex(hue, 65, 45);
+    }
+
+    hslToHex(h, s, l) {
+        const sat = s / 100;
+        const light = l / 100;
+        const c = (1 - Math.abs(2 * light - 1)) * sat;
+        const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+        const m = light - c / 2;
+        let r = 0;
+        let g = 0;
+        let b = 0;
+
+        if (h >= 0 && h < 60) {
+            r = c; g = x; b = 0;
+        } else if (h >= 60 && h < 120) {
+            r = x; g = c; b = 0;
+        } else if (h >= 120 && h < 180) {
+            r = 0; g = c; b = x;
+        } else if (h >= 180 && h < 240) {
+            r = 0; g = x; b = c;
+        } else if (h >= 240 && h < 300) {
+            r = x; g = 0; b = c;
+        } else {
+            r = c; g = 0; b = x;
+        }
+
+        const toHex = (n) => {
+            const normalized = Math.round((n + m) * 255);
+            return normalized.toString(16).padStart(2, '0');
+        };
+
+        return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+    }
+
+    getContrastingTextColor(hexColor) {
+        if (!hexColor) return '#ffffff';
+        let hex = hexColor.replace('#', '').trim();
+        if (hex.length === 3) {
+            hex = hex.split('').map((char) => char + char).join('');
+        }
+        const intVal = parseInt(hex, 16);
+        if (Number.isNaN(intVal)) return '#ffffff';
+        const r = (intVal >> 16) & 255;
+        const g = (intVal >> 8) & 255;
+        const b = intVal & 255;
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        return luminance > 0.6 ? '#1f2937' : '#ffffff';
+    }
+
+    getLocationColorStyles(location) {
+        const entry = this.ensureLocationColor(location);
+        return entry || { bg: '#94a3b8', text: '#ffffff' };
+    }
+
+    renderLocationBadge(location, label = null) {
+        const rawLabel = label || this.getLocationDisplayName(location);
+        const displayName = (rawLabel && rawLabel.trim()) ? rawLabel : 'Konum belirtilmedi';
+        const { bg, text } = this.getLocationColorStyles(location);
+        return `<span class="location-badge" style="--location-bg:${bg}; --location-text:${text};">${displayName}</span>`;
+    }
+
     addLocation() {
         const input = document.getElementById('newLocationName');
         const locationName = input.value.trim().toLowerCase().replace(/\s+/g, '_');
@@ -1871,7 +2004,8 @@ class MedicineInventory {
             return;
         }
         
-        this.locations.push(locationName);
+    this.locations.push(locationName);
+    this.ensureLocationColor(locationName);
         this.saveData();
         this.populateLocationSelects();
         this.displayLocations();
@@ -1887,8 +2021,9 @@ class MedicineInventory {
         this.locations.forEach(location => {
             const div = document.createElement('div');
             div.className = 'location-item';
+            const badge = this.renderLocationBadge(location);
             div.innerHTML = `
-                <span>${this.getLocationDisplayName(location)}</span>
+                ${badge}
                 <button class="remove-location" onclick="medicineApp.removeLocation('${location}')">Kaldır</button>
             `;
             container.appendChild(div);
@@ -1902,6 +2037,9 @@ class MedicineInventory {
         }
         
         this.locations = this.locations.filter(loc => loc !== location);
+        if (this.settings?.locationColors) {
+            delete this.settings.locationColors[location];
+        }
         this.saveData();
         this.populateLocationSelects();
         this.displayLocations();
@@ -1915,11 +2053,12 @@ class MedicineInventory {
         this.hideConsumeForm();
         
         const daysUntilExpiration = this.getDaysUntilExpiration(item.expirationDate);
+        const locationBadge = this.renderLocationBadge(item.location);
         
         details.innerHTML = `
             <h3>${item.name}</h3>
             <p><strong>Adet:</strong> ${item.quantity}</p>
-            <p><strong>Konum:</strong> ${this.getLocationDisplayName(item.location)}</p>
+            <p><strong>Konum:</strong> ${locationBadge}</p>
             ${item.expirationDate ? `<p><strong>Son Kullanma:</strong> ${this.formatDate(item.expirationDate)} ${this.getExpirationStatus(daysUntilExpiration)}</p>` : ''}
             <p><strong>Eklenme Tarihi:</strong> ${this.formatDate(item.addedDate)}</p>
         `;

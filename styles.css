@@ -688,18 +688,43 @@ nav {
 }
 
 .item-location {
-    background: #667eea;
-    color: white;
+    background: var(--location-bg, #667eea);
+    color: var(--location-text, #ffffff);
     padding: 5px 12px;
     border-radius: 20px;
     font-size: 12px;
-    font-weight: 500;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    line-height: 1;
+    white-space: nowrap;
 }
 
 .item-quantity {
     font-size: 18px;
     font-weight: bold;
     color: #333;
+}
+
+.location-badge {
+    background: var(--location-bg, #667eea);
+    color: var(--location-text, #ffffff);
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.location-qty {
+    font-size: 12px;
+    color: #475569;
+    margin-left: 4px;
 }
 
 /* Transfer Styles */
@@ -932,6 +957,11 @@ nav {
     background: #f8f9fa;
     border-radius: 6px;
     margin-bottom: 10px;
+    gap: 12px;
+}
+
+.location-item .location-badge {
+    flex-shrink: 0;
 }
 
 .remove-location {
