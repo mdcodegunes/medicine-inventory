@@ -82,19 +82,22 @@
             <div id="missingDefaultsNotice" class="missing-defaults hidden"></div>
 
             <div class="inventory-summary">
-                <button id="summaryToggleBtn" type="button" class="summary-toggle" aria-expanded="false">📦 Stok Özeti</button>
+                <button id="summaryToggleBtn" type="button" class="summary-toggle" aria-expanded="false" aria-controls="inventorySummary">📦 Stok Özeti</button>
                 <div id="inventorySummary" class="summary-panel hidden" aria-hidden="true">
                     <div class="summary-group">
                         <h3>İlaç Bazında Toplam</h3>
                         <table class="summary-table">
                             <thead>
-                                <tr>
-                                    <th>İlaç</th>
-                                    <th class="number">Toplam Adet</th>
+                                <tr class="summary-head-main">
+                                    <th rowspan="2">İlaç</th>
+                                    <th rowspan="2" class="number">Toplam Adet</th>
+                                    <th colspan="4" class="summary-head-locations">Konum Dağılımı</th>
+                                </tr>
+                                <tr class="summary-head-sub">
                                     <th class="number">Oda</th>
                                     <th class="number">Araç</th>
                                     <th class="number">Nakil</th>
-                                    <th>Diğer Konumlar</th>
+                                    <th>Diğer</th>
                                 </tr>
                             </thead>
                             <tbody id="summaryMedicineBody">

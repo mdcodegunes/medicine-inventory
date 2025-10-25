@@ -554,6 +554,36 @@ nav {
     color: #3c366b;
 }
 
+.summary-head-main th {
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    text-align: center;
+    border-bottom: 1px solid #d4d9f7;
+    padding-bottom: 8px;
+}
+
+.summary-head-main th:first-child,
+.summary-head-main th:nth-child(2) {
+    text-align: left;
+}
+
+.summary-head-locations {
+    text-align: center;
+    font-weight: 700;
+}
+
+.summary-head-sub th {
+    background: #e7eafc;
+    font-size: 12px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+
+.summary-head-sub th:last-child {
+    text-align: center;
+}
+
 .summary-table th,
 .summary-table td {
     padding: 10px 12px;
