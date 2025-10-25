@@ -1361,7 +1361,7 @@ class MedicineInventory {
         panel.setAttribute('aria-hidden', isVisible ? 'false' : 'true');
 
         if (!inventory.length) {
-            medicineBody.innerHTML = '<tr><td colspan="3" class="summary-empty">Envanter boş.</td></tr>';
+            medicineBody.innerHTML = '<tr><td colspan="6" class="summary-empty">Envanter boş.</td></tr>';
             return;
         }
 
@@ -1387,35 +1387,45 @@ class MedicineInventory {
             entry.perLocation.set(locKey, current + qty);
         });
 
+        const keyLocations = ['oda', 'arac', 'nakil'];
         const medicineRows = Array.from(medicineMap.values())
             .sort((a, b) => {
                 if (b.total !== a.total) return b.total - a.total;
                 return a.name.localeCompare(b.name, 'tr', { sensitivity: 'base' });
             })
             .map((entry) => {
-                const distribution = Array.from(entry.perLocation.entries())
+                const locationCells = keyLocations.map((loc) => {
+                    const qty = entry.perLocation.get(loc) || 0;
+                    if (!qty) return '<td class="number summary-loc empty">—</td>';
+                    const styles = this.getLocationColorStyles(loc);
+                    return `<td class="number summary-loc" style="--location-bg:${styles.bg}; --location-text:${styles.text};">${qty}</td>`;
+                });
+
+                const otherEntries = Array.from(entry.perLocation.entries())
+                    .filter(([loc]) => !keyLocations.includes(loc))
                     .sort((a, b) => {
                         const labelA = a[0] ? this.getLocationDisplayName(a[0]) : 'Konum belirtilmedi';
                         const labelB = b[0] ? this.getLocationDisplayName(b[0]) : 'Konum belirtilmedi';
                         return labelA.localeCompare(labelB, 'tr', { sensitivity: 'base' });
-                    })
-                    .map(([loc, qty]) => {
-                        const badge = this.renderLocationBadge(loc);
-                        return `${badge} <span class="location-qty">(${qty})</span>`;
-                    })
-                    .join(' ');
+                    });
+
+                const otherContent = otherEntries.length
+                    ? otherEntries.map(([loc, qty]) => `${this.renderLocationBadge(loc)} <span class="location-qty">(${qty})</span>`).join(' ')
+                    : '—';
+
                 return `
                     <tr>
                         <td>${entry.name}</td>
                         <td class="number">${entry.total}</td>
-                        <td>${distribution || 'Konum bilgisi yok'}</td>
+                        ${locationCells.join('')}
+                        <td>${otherContent}</td>
                     </tr>
                 `;
             });
 
         medicineBody.innerHTML = medicineRows.length
             ? medicineRows.join('')
-            : '<tr><td colspan="3" class="summary-empty">Envanter boş.</td></tr>';
+            : '<tr><td colspan="6" class="summary-empty">Envanter boş.</td></tr>';
     }
 
     markItemUpdated(item) {
